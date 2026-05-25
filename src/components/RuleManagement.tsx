@@ -296,11 +296,6 @@ export default function RuleManagement() {
     top: number;
     left: number;
   } | null>(null);
-  const [activeL7GroupMenu, setActiveL7GroupMenu] = useState<{
-    group: string;
-    top: number;
-    left: number;
-  } | null>(null);
   const [isReadOnly, setIsReadOnly] = useState(false);
 
   // States for the Import configuration modal (上传文件)
@@ -547,7 +542,6 @@ export default function RuleManagement() {
   const handleProtocolChange = (p: string) => {
     setProtocol(p);
     setSelectedRuleIds([]);
-    setActiveL7GroupMenu(null);
     const newTabs = getTabs(p);
     if (!newTabs.includes(activeTab)) {
       setActiveTab(newTabs[0]); // Reset to first tab if current disappears
@@ -731,24 +725,29 @@ export default function RuleManagement() {
   const isReadonlyConfigRule = (item: any) => {
     return (item.tab || '').includes('已知应用') || (item.tab === 'IP应用' && !!item.isDefaultIpApp);
   };
-  const [l7GroupOrderByProtocol, setL7GroupOrderByProtocol] = useState<Record<string, string[]>>({});
-  const [draggingL7Group, setDraggingL7Group] = useState<string | null>(null);
-  const [dragOverL7Group, setDragOverL7Group] = useState<string | null>(null);
-  const currentL7GroupOrder = l7GroupOrderByProtocol[protocol] || l7GroupOptions;
-  const currentL7GroupRank = currentL7GroupOrder.reduce((acc: Record<string, number>, g, idx) => {
+  const [collapsedL7GroupsByProtocol, setCollapsedL7GroupsByProtocol] = useState<Record<string, string[]>>({});
+  const collapsedL7Groups = collapsedL7GroupsByProtocol[protocol] || [];
+  const isL7GroupCollapsed = (group: string) => collapsedL7Groups.includes(group);
+  const toggleL7GroupCollapse = (group: string) => {
+    setCollapsedL7GroupsByProtocol((prev) => {
+      const current = prev[protocol] || [];
+      const next = current.includes(group) ? current.filter((g) => g !== group) : [...current, group];
+      return { ...prev, [protocol]: next };
+    });
+  };
+  const defaultL7GroupRank = l7GroupOptions.reduce((acc: Record<string, number>, g, idx) => {
     acc[g] = idx;
     return acc;
   }, {});
   const displayedTableData = activeTab === 'L7应用'
     ? [...filteredTableData].sort((a, b) => {
-        const ga = currentL7GroupRank[a.l7Group || ''] ?? 999;
-        const gb = currentL7GroupRank[b.l7Group || ''] ?? 999;
+        const ga = defaultL7GroupRank[a.l7Group || ''] ?? 999;
+        const gb = defaultL7GroupRank[b.l7Group || ''] ?? 999;
         if (ga !== gb) return ga - gb;
         return (a.priority || 0) - (b.priority || 0);
       })
     : filteredTableData;
 
-  const [definitionMode, setDefinitionMode] = useState<'basic' | 'advanced'>('basic');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCopyMode, setIsCopyMode] = useState(false);
   const [isAdvancedOnlyMode, setIsAdvancedOnlyMode] = useState(false);
@@ -866,6 +865,9 @@ export default function RuleManagement() {
       .filter(Boolean);
   };
 
+  const isTcpUdpIpAdvancedTab = (tab: string) =>
+    tab === '自定义应用(TCP)' || tab === '自定义应用(UDP)' || tab === 'IP应用';
+
   const pickAdvancedFields = (src: any) => ({
     timeout: src.timeout,
     performanceRapid: src.performanceRapid,
@@ -963,7 +965,6 @@ export default function RuleManagement() {
     setIsEditMode(false);
     setActiveEditId(null);
     setEditLockedProbes([]);
-    setDefinitionMode('basic');
     setValidationError(null);
     const readOnly = activeTab.includes('已知应用');
     setIsReadOnly(readOnly);
@@ -1022,7 +1023,6 @@ export default function RuleManagement() {
     setIsCopyMode(false);
     setIsEditMode(true);
     setActiveEditId(item.id);
-    setDefinitionMode('basic');
     setValidationError(null);
     const readOnly = item.tab ? item.tab.includes('已知应用') : false;
     setIsReadOnly(readOnly);
@@ -1046,7 +1046,7 @@ export default function RuleManagement() {
       dstIpV6: item.dstIpV6 || '',
       performanceRapid: '50',
       performanceNormal: '500',
-      storageLength: '64字节',
+      storageLength: item.storageLength || '64字节',
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       p2: item.p2 !== undefined ? String(item.p2) : '配置项p2默认属性',
       ...p2Vals
@@ -1067,7 +1067,6 @@ export default function RuleManagement() {
     setIsCopyMode(false);
     setIsEditMode(false);
     setActiveEditId(null);
-    setDefinitionMode('basic');
     setValidationError(null);
     setIsReadOnly(true);
     setEditLockedProbes(getRuleInterfaces(item.port || ''));
@@ -1149,7 +1148,6 @@ export default function RuleManagement() {
     setIsEditMode(false);
     setActiveEditId(null);
     setEditLockedProbes([]);
-    setDefinitionMode('basic');
     setValidationError(null);
     const readOnly = item.tab ? item.tab.includes('已知应用') : false;
     setIsReadOnly(readOnly);
@@ -1171,7 +1169,7 @@ export default function RuleManagement() {
       dstIpV6: item.dstIpV6 || '',
       performanceRapid: '50',
       performanceNormal: '500',
-      storageLength: '64字节',
+      storageLength: item.storageLength || '64字节',
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       p2: item.p2 !== undefined ? String(item.p2) : '配置项p2默认属性',
       ...p2Vals
@@ -1298,17 +1296,6 @@ export default function RuleManagement() {
     setAllRules(updatedRules);
   };
 
-  const reorderL7Groups = (sourceGroup: string, targetGroup: string) => {
-    if (!sourceGroup || !targetGroup || sourceGroup === targetGroup) return;
-    const currentOrder = [...currentL7GroupOrder];
-    const srcIdx = currentOrder.indexOf(sourceGroup);
-    const dstIdx = currentOrder.indexOf(targetGroup);
-    if (srcIdx === -1 || dstIdx === -1) return;
-    const [moved] = currentOrder.splice(srcIdx, 1);
-    currentOrder.splice(dstIdx, 0, moved);
-    setL7GroupOrderByProtocol((prev) => ({ ...prev, [protocol]: currentOrder }));
-  };
-
   const reorderL7RulesByDisplayIndexes = (srcIndex: number, destIndex: number) => {
     if (srcIndex === destIndex) return;
     const srcItem = displayedTableData[srcIndex];
@@ -1404,52 +1391,6 @@ export default function RuleManagement() {
     moveRuleDown(index);
   };
 
-  const getVisibleL7Groups = () => {
-    const groups: string[] = [];
-    displayedTableData.forEach((r) => {
-      const g = r.l7Group || '';
-      if (g && !groups.includes(g)) groups.push(g);
-    });
-    return groups;
-  };
-
-  const getL7GroupMoveMeta = (group: string) => {
-    const visibleGroups = getVisibleL7Groups();
-    const idx = visibleGroups.indexOf(group);
-    return {
-      canUp: idx > 0,
-      canDown: idx > -1 && idx < visibleGroups.length - 1,
-      topGroup: visibleGroups[0] || group,
-      bottomGroup: visibleGroups[visibleGroups.length - 1] || group,
-      prevGroup: idx > 0 ? visibleGroups[idx - 1] : group,
-      nextGroup: idx > -1 && idx < visibleGroups.length - 1 ? visibleGroups[idx + 1] : group,
-    };
-  };
-
-  const moveL7GroupToTop = (group: string) => {
-    const meta = getL7GroupMoveMeta(group);
-    if (group !== meta.topGroup) reorderL7Groups(group, meta.topGroup);
-    setActiveL7GroupMenu(null);
-  };
-
-  const moveL7GroupUp = (group: string) => {
-    const meta = getL7GroupMoveMeta(group);
-    if (meta.canUp) reorderL7Groups(group, meta.prevGroup);
-    setActiveL7GroupMenu(null);
-  };
-
-  const moveL7GroupDown = (group: string) => {
-    const meta = getL7GroupMoveMeta(group);
-    if (meta.canDown) reorderL7Groups(group, meta.nextGroup);
-    setActiveL7GroupMenu(null);
-  };
-
-  const moveL7GroupToBottom = (group: string) => {
-    const meta = getL7GroupMoveMeta(group);
-    if (group !== meta.bottomGroup) reorderL7Groups(group, meta.bottomGroup);
-    setActiveL7GroupMenu(null);
-  };
-
   const getL7MoveMeta = (index: number) => {
     const item = displayedTableData[index];
     if (!item) return { canUp: false, canDown: false };
@@ -1517,11 +1458,10 @@ export default function RuleManagement() {
       return;
     }
 
-    const useAdvancedGroups = definitionMode === 'advanced';
-    const resolvedSrcIp = useAdvancedGroups ? (serializeAdvancedGroup(advancedGroups.srcIp) || formData.srcIp) : formData.srcIp;
-    const resolvedSrcPort = useAdvancedGroups ? (serializeAdvancedGroup(advancedGroups.srcPort) || formData.srcPort) : formData.srcPort;
-    const resolvedDstIp = useAdvancedGroups ? (serializeAdvancedGroup(advancedGroups.dstIp) || formData.dstIp) : formData.dstIp;
-    const resolvedDstPort = useAdvancedGroups ? (serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort) : formData.dstPort;
+    const resolvedSrcIp = serializeAdvancedGroup(advancedGroups.srcIp) || formData.srcIp;
+    const resolvedSrcPort = serializeAdvancedGroup(advancedGroups.srcPort) || formData.srcPort;
+    const resolvedDstIp = serializeAdvancedGroup(advancedGroups.dstIp) || formData.dstIp;
+    const resolvedDstPort = serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort;
 
     if (protocol === '混栈应用') {
       const ipText = `${resolvedSrcIp} ${resolvedDstIp}`;
@@ -1529,7 +1469,7 @@ export default function RuleManagement() {
       const hasV6 = /[a-fA-F0-9]*:[a-fA-F0-9:]+/.test(ipText);
 
       if (!hasV4 || !hasV6) {
-        setValidationError('混栈应用规则校验不通过：源/目的IP中需至少同时包含一组 IPv4 与 IPv6 地址（基础定义或高级定义均可）。');
+        setValidationError('混栈应用规则校验不通过：源/目的IP中需至少同时包含一组 IPv4 与 IPv6 地址。');
         return;
       }
     }
@@ -1557,6 +1497,7 @@ export default function RuleManagement() {
             srcIpV6: formData.srcIpV6,
             dstIpV4: formData.dstIpV4,
             dstIpV6: formData.dstIpV6,
+            storageLength: formData.storageLength,
             p2: p2Serialized
           };
         }
@@ -1585,6 +1526,7 @@ export default function RuleManagement() {
         srcIpV6: formData.srcIpV6,
         dstIpV4: formData.dstIpV4,
         dstIpV6: formData.dstIpV6,
+        storageLength: formData.storageLength,
         p2: p2Serialized
       };
       setAllRules(prev => [...prev, newRule]);
@@ -1661,6 +1603,11 @@ export default function RuleManagement() {
     setAllRules(prev => prev.filter(r => r.protocol !== protocol || r.tab !== activeTab));
     setSelectedRuleIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
   };
+
+  const activeAdvancedTab = isBatchAdvancedMode
+    ? activeTab
+    : (allRules.find((r) => r.id === activeAdvancedRuleId)?.tab || activeTab);
+  const showCpuLogCoreInAdvanced = !isTcpUdpIpAdvancedTab(activeAdvancedTab);
 
   return (
     <div className="p-4 bg-slate-50 min-h-full">
@@ -1786,7 +1733,6 @@ export default function RuleManagement() {
                     onClick={() => {
                       setActiveTab(tab);
                       setSelectedRuleIds([]);
-                      setActiveL7GroupMenu(null);
                       handleResetFilter(); // Reset filter when switching tabs
                     }}
                     className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-md transition-all duration-150 ${
@@ -2057,56 +2003,24 @@ export default function RuleManagement() {
               {displayedTableData.map((item, index) => (
                 <React.Fragment key={item.id}>
                 {activeTab === 'L7应用' && (index === 0 || (displayedTableData[index - 1]?.l7Group || '') !== (item.l7Group || '')) && (
-                  <tr
-                    draggable
-                    onDragStart={() => setDraggingL7Group(item.l7Group || null)}
-                    onDragEnd={() => {
-                      setDraggingL7Group(null);
-                      setDragOverL7Group(null);
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOverL7Group(item.l7Group || null);
-                    }}
-                    onDragLeave={() => {
-                      if (dragOverL7Group === (item.l7Group || null)) setDragOverL7Group(null);
-                    }}
-                    onDrop={() => {
-                      if (draggingL7Group && item.l7Group) {
-                        reorderL7Groups(draggingL7Group, item.l7Group);
-                      }
-                      setDraggingL7Group(null);
-                      setDragOverL7Group(null);
-                    }}
-                    className={`border-y border-sky-100 cursor-move ${
-                      dragOverL7Group === (item.l7Group || null) ? 'bg-sky-100/70' : 'bg-sky-50/40'
-                    }`}
-                  >
+                  <tr className="border-y border-sky-100 bg-sky-50/40">
                     <td colSpan={columns.filter(c => c.visible).length + 2} className="px-4 py-2 text-xs font-semibold text-sky-700">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <button
                             type="button"
-                            draggable
-                            onDragStart={() => setDraggingL7Group(item.l7Group || null)}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              if (activeL7GroupMenu?.group === (item.l7Group || '')) {
-                                setActiveL7GroupMenu(null);
-                              } else {
-                                setActivePriorityMenu(null);
-                                setActiveL7GroupMenu({
-                                  group: item.l7Group || '',
-                                  top: rect.bottom + 4,
-                                  left: rect.left,
-                                });
-                              }
+                              toggleL7GroupCollapse(item.l7Group || '');
                             }}
-                            className="p-1 hover:bg-sky-100 rounded text-slate-500 hover:text-sky-600 transition-colors cursor-move inline-flex items-center justify-center shrink-0"
-                            title="拖动调整协议组优先级 / 点击展开菜单"
+                            className="p-1 hover:bg-sky-100 rounded text-slate-500 hover:text-sky-600 transition-colors inline-flex items-center justify-center shrink-0"
+                            title={isL7GroupCollapsed(item.l7Group || '') ? '展开协议组' : '收起协议组'}
                           >
-                            <GripVertical className="w-3.5 h-3.5" />
+                            {isL7GroupCollapsed(item.l7Group || '') ? (
+                              <ChevronRight className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
                           </button>
                           <span>协议组：{item.l7Group || '未分类'}</span>
                         </div>
@@ -2170,6 +2084,7 @@ export default function RuleManagement() {
                     </td>
                   </tr>
                 )}
+                {!(activeTab === 'L7应用' && isL7GroupCollapsed(item.l7Group || '')) && (
                 <tr 
                   className={`hover:bg-slate-50 group transition-all relative ${
                     dragOverIndex === index ? 'bg-sky-50/40 border-t-2 border-t-sky-500' : ''
@@ -2237,7 +2152,6 @@ export default function RuleManagement() {
                                     if (activePriorityMenu?.id === item.id) {
                                       setActivePriorityMenu(null);
                                     } else {
-                                      setActiveL7GroupMenu(null);
                                       setActivePriorityMenu({
                                         id: item.id,
                                         index: index,
@@ -2419,6 +2333,7 @@ export default function RuleManagement() {
                     </div>
                   </td>
                 </tr>
+                )}
                 </React.Fragment>
               ))}
               {/* Fill with empty rows to maintain height */}
@@ -2586,15 +2501,19 @@ export default function RuleManagement() {
                           onChange={(e) => setFormData({...formData, p2CpuStatsCore: e.target.value})}
                         />
 
-                        {/* CPU分配(Log core ID) */}
-                        <label className="text-slate-600 text-right pr-5 font-medium">CPU分配(Log core ID)</label>
-                        <input 
-                          type="text" 
-                          disabled={isReadOnly}
-                          className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50"
-                          value={formData.p2CpuLogCore}
-                          onChange={(e) => setFormData({...formData, p2CpuLogCore: e.target.value})}
-                        />
+                        {showCpuLogCoreInAdvanced && (
+                          <>
+                            {/* CPU分配(Log core ID) */}
+                            <label className="text-slate-600 text-right pr-5 font-medium">CPU分配(Log core ID)</label>
+                            <input 
+                              type="text" 
+                              disabled={isReadOnly}
+                              className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50"
+                              value={formData.p2CpuLogCore}
+                              onChange={(e) => setFormData({...formData, p2CpuLogCore: e.target.value})}
+                            />
+                          </>
+                        )}
 
                         {/* 应用巨帧包长阈值 */}
                         <label className="text-slate-600 text-right pr-5 font-medium">应用巨帧包长阈值</label>
@@ -2821,151 +2740,64 @@ export default function RuleManagement() {
                       </div>
                     </div>
 
-                    <label className="text-slate-600 text-right pr-4">应用定义</label>
-                    <div className="flex items-center space-x-0">
-                      <button 
-                        onClick={() => setDefinitionMode('basic')}
-                        className={`px-8 py-1.5 text-xs font-medium border transition-all ${
-                          definitionMode === 'basic' ? 'bg-sky-500 border-sky-500 text-white rounded-l' : 'bg-white border-slate-200 text-slate-500 rounded-l hover:bg-slate-50'
-                        }`}
-                      >
-                        基础定义
-                      </button>
-                      <button 
-                         onClick={() => setDefinitionMode('advanced')}
-                         className={`px-8 py-1.5 text-xs font-medium border-y border-r transition-all ${
-                          definitionMode === 'advanced' ? 'bg-sky-500 border-sky-500 text-white rounded-r' : 'bg-white border-slate-200 text-slate-500 rounded-r hover:bg-slate-50'
-                        }`}
-                      >
-                        高级定义
-                      </button>
-                    </div>
-
-                    {/* Definition Content */}
-                    <div className="col-start-2">
-                       {definitionMode === 'basic' ? (
-                        <div className="space-y-4 pt-2">
-                          {protocol === '混栈应用' && (
-                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-                              混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址（可分布在基础定义或高级定义中）。
-                            </div>
-                          )}
-                          {[
-                            { label: '源地址', ph: protocol === '混栈应用' ? '支持IPv4/IPv6混合输入、多个IP、IP范围' : '支持单个IP、多个IP、IP范围', key: 'srcIp' },
-                            { label: '源端口', ph: '支持单个端口、多个端口、端口范围', key: 'srcPort' },
-                            { label: '目的地址', ph: protocol === '混栈应用' ? '支持IPv4/IPv6混合输入、多个IP、IP范围' : '支持单个IP、多个IP、IP范围', key: 'dstIp' },
-                            { label: '目的端口', ph: '支持单个端口、多个端口、端口范围', key: 'dstPort' },
-                          ].map((f) => (
-                            <div key={f.label} className="grid grid-cols-[80px_1fr] items-center gap-4">
-                              <label className="text-slate-500 text-xs text-right">{f.label}</label>
-                              <input 
-                                type="text" 
-                                disabled={isReadOnly}
-                                className="w-full border border-slate-200 rounded px-3 py-1.5 focus:border-sky-400 outline-none text-xs placeholder:text-slate-300 disabled:bg-slate-50" 
-                                placeholder={f.ph} 
-                                value={(formData as any)[f.key]}
-                                onChange={(e) => setFormData({...formData, [f.key]: e.target.value})}
-                              />
-                            </div>
-                          ))}
+                    <label className="text-slate-600 text-right pr-4 self-start pt-2">应用定义</label>
+                    <div className="space-y-4">
+                      {protocol === '混栈应用' && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                          混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址。
                         </div>
-                       ) : (
-                        <div className="space-y-4 pt-2">
-                          {protocol === '混栈应用' && (
-                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-                              混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址（可分布在基础定义或高级定义中）。
-                            </div>
-                          )}
-                          {[
-                            { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
-                            { key: 'srcPort', title: '源端口组', placeholder: '输入源端口，例如 80,443,1000-2000' },
-                            { key: 'dstIp', title: '目的IP组', placeholder: '输入目的IP，例如 10.0.0.5' },
-                            { key: 'dstPort', title: '目的端口组', placeholder: '输入目的端口，例如 53,8080' },
-                          ].map((group) => (
-                            <div key={group.key} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div className="text-xs font-semibold text-slate-700">{group.title}</div>
-                                <button
-                                  type="button"
+                      )}
+                      {[
+                        { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
+                        { key: 'srcPort', title: '源端口组', placeholder: '输入源端口，例如 80,443,1000-2000' },
+                        { key: 'dstIp', title: '目的IP组', placeholder: '输入目的IP，例如 10.0.0.5' },
+                        { key: 'dstPort', title: '目的端口组', placeholder: '输入目的端口，例如 53,8080' },
+                      ].map((group) => (
+                        <div key={group.key} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold text-slate-700">{group.title}</div>
+                            <button
+                              type="button"
+                              disabled={isReadOnly}
+                              onClick={() => addAdvancedItem(group.key)}
+                              className="px-2 py-1 border border-slate-200 rounded text-[11px] text-slate-600 hover:border-sky-300 hover:text-sky-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              + 添加排除
+                            </button>
+                          </div>
+
+                          {(advancedGroups[group.key] || []).map((row: any, idx: number) => (
+                            <div key={row.id} className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                {idx > 0 && (
+                                  <span className="w-10 text-xs text-slate-500 text-center">排除</span>
+                                )}
+                                <input
+                                  type="text"
                                   disabled={isReadOnly}
-                                  onClick={() => addAdvancedItem(group.key)}
-                                  className="px-2 py-1 border border-slate-200 rounded text-[11px] text-slate-600 hover:border-sky-300 hover:text-sky-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  + 添加排除
-                                </button>
+                                  className="flex-1 border border-slate-200 rounded px-3 py-1.5 text-xs outline-none focus:border-sky-400 placeholder:text-slate-300 disabled:bg-slate-50"
+                                  placeholder={group.placeholder}
+                                  value={row.value}
+                                  onChange={(e) => updateAdvancedItem(group.key, idx, { value: e.target.value })}
+                                />
                               </div>
-
-                              {(advancedGroups[group.key] || []).map((row: any, idx: number) => (
-                                <div key={row.id} className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    {idx > 0 && (
-                                      <span className="w-10 text-xs text-slate-500 text-center">排除</span>
-                                    )}
-                                    <input
-                                      type="text"
-                                      disabled={isReadOnly}
-                                      className="flex-1 border border-slate-200 rounded px-3 py-1.5 text-xs outline-none focus:border-sky-400 placeholder:text-slate-300 disabled:bg-slate-50"
-                                      placeholder={group.placeholder}
-                                      value={row.value}
-                                      onChange={(e) => updateAdvancedItem(group.key, idx, { value: e.target.value })}
-                                    />
-                                  </div>
-                                </div>
-                              ))}
                             </div>
                           ))}
                         </div>
-                       )}
+                      ))}
                     </div>
 
-                    {definitionMode === 'advanced' && (
-                      <>
-                        {/* Performance */}
-                        <label className="text-slate-600 text-right pr-4">应用性能</label>
-                        <div className="flex items-center gap-4 text-xs">
-                           <span className="text-green-500">响应迅速</span>
-                           <span className="text-slate-400">≤</span>
-                           <div className="flex items-center border border-slate-200 rounded px-2 bg-white group focus-within:border-sky-400 transition-colors">
-                              <input 
-                                type="text" 
-                                disabled={isReadOnly}
-                                className="w-12 py-1 outline-none text-center disabled:bg-slate-50" 
-                                value={formData.performanceRapid}
-                                onChange={(e) => setFormData({...formData, performanceRapid: e.target.value})}
-                              />
-                              <span className="text-slate-400 px-1 border-l border-slate-100 ml-2">毫秒</span>
-                           </div>
-                           <span className="text-slate-400">{'<'}</span>
-                           <span className="text-amber-500 whitespace-nowrap">响应正常</span>
-                           <span className="text-slate-400">≤</span>
-                           <div className="flex items-center border border-slate-200 rounded px-2 bg-white group focus-within:border-sky-400 transition-colors">
-                              <input 
-                                type="text" 
-                                disabled={isReadOnly}
-                                className="w-12 py-1 outline-none text-center disabled:bg-slate-50" 
-                                value={formData.performanceNormal}
-                                onChange={(e) => setFormData({...formData, performanceNormal: e.target.value})}
-                              />
-                              <span className="text-slate-400 px-1 border-l border-slate-100 ml-2">毫秒</span>
-                           </div>
-                           <span className="text-slate-400">{'<'}</span>
-                           <span className="text-red-500 whitespace-nowrap">响应超时</span>
-                        </div>
-
-                        {/* Packet Length */}
-                        <label className="text-slate-600 text-right pr-4">存包长度</label>
-                        <select 
-                          disabled={isReadOnly}
-                          className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
-                          value={formData.storageLength}
-                          onChange={(e) => setFormData({...formData, storageLength: e.target.value})}
-                        >
-                          <option>64字节</option>
-                          <option>全包</option>
-                          <option>128字节</option>
-                        </select>
-                      </>
-                    )}
+                    <label className="text-slate-600 text-right pr-4">存包长度</label>
+                    <select
+                      disabled={isReadOnly}
+                      className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed text-xs"
+                      value={formData.storageLength}
+                      onChange={(e) => setFormData({ ...formData, storageLength: e.target.value })}
+                    >
+                      <option>64字节</option>
+                      <option>128字节</option>
+                      <option>全包</option>
+                    </select>
                   </div>
                 </div>
                 )}
@@ -3959,62 +3791,6 @@ export default function RuleManagement() {
               </button>
               <button 
                 onClick={() => moveRuleToBottom(activePriorityMenu.index)}
-                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium whitespace-nowrap cursor-pointer flex items-center justify-between"
-              >
-                <span>置底</span>
-                <span className="text-[10px] text-slate-400">Bottom</span>
-              </button>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Floating L7 Group reorder dropdown popover */}
-      <AnimatePresence>
-        {activeL7GroupMenu !== null && (
-          <>
-            <div
-              className="fixed inset-0 z-[9998] bg-transparent"
-              onClick={() => setActiveL7GroupMenu(null)}
-            />
-            <div
-              style={{
-                position: 'fixed',
-                top: `${activeL7GroupMenu.top}px`,
-                left: `${activeL7GroupMenu.left}px`
-              }}
-              className="w-28 bg-white border border-slate-200 rounded-lg shadow-xl z-[9999] py-1 divide-y divide-slate-100 text-xs text-left"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => moveL7GroupToTop(activeL7GroupMenu.group)}
-                className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium whitespace-nowrap cursor-pointer flex items-center justify-between"
-              >
-                <span>置顶</span>
-                <span className="text-[10px] text-slate-400">Top</span>
-              </button>
-              <button
-                onClick={() => moveL7GroupUp(activeL7GroupMenu.group)}
-                disabled={!getL7GroupMoveMeta(activeL7GroupMenu.group).canUp}
-                className={`w-full text-left px-3 py-2 hover:bg-slate-50 font-medium whitespace-nowrap flex items-center justify-between ${
-                  !getL7GroupMoveMeta(activeL7GroupMenu.group).canUp ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
-                }`}
-              >
-                <span>上移</span>
-                <span className="text-[10px] text-slate-400">Up</span>
-              </button>
-              <button
-                onClick={() => moveL7GroupDown(activeL7GroupMenu.group)}
-                disabled={!getL7GroupMoveMeta(activeL7GroupMenu.group).canDown}
-                className={`w-full text-left px-3 py-2 hover:bg-slate-50 font-medium whitespace-nowrap flex items-center justify-between ${
-                  !getL7GroupMoveMeta(activeL7GroupMenu.group).canDown ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
-                }`}
-              >
-                <span>下移</span>
-                <span className="text-[10px] text-slate-400">Down</span>
-              </button>
-              <button
-                onClick={() => moveL7GroupToBottom(activeL7GroupMenu.group)}
                 className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium whitespace-nowrap cursor-pointer flex items-center justify-between"
               >
                 <span>置底</span>
