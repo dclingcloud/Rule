@@ -26,11 +26,11 @@ import { motion, AnimatePresence } from 'motion/react';
 const MENU_DATA: { category: string; items: string[] }[] = [
   {
     category: '管理',
-    items: ['探针管理', '接口管理', '应用管理', '探针健康', '探针巡检']
+    items: ['探针管理', '接口管理', '探针健康', '探针巡检']
   },
   {
     category: '配置',
-    items: ['虚链路配置', '分析组配置', '裁包配置', '本地网络配置']
+    items: ['虚链路配置', '分析组配置', '应用配置', '裁包配置', '本地网络配置']
   },
   {
     category: '数据',
@@ -54,6 +54,13 @@ const MENU_DATA: { category: string; items: string[] }[] = [
   }
 ];
 
+export const getMenuItemCategory = (item: string) => {
+  for (const cat of MENU_DATA) {
+    if (cat.items.includes(item)) return cat.category;
+  }
+  return '管理';
+};
+
 interface SidebarProps {
   onSelect: (item: string) => void;
   activeItem: string;
@@ -61,6 +68,7 @@ interface SidebarProps {
 
 export default function Sidebar({ onSelect, activeItem }: SidebarProps) {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['管理', '配置', '数据', '用户', '系统', '第三方接口配置', '智能体']);
+  const itemCategory = getMenuItemCategory(activeItem);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => 
@@ -78,7 +86,9 @@ export default function Sidebar({ onSelect, activeItem }: SidebarProps) {
         </div>
         <span className="font-medium text-slate-800">配置</span>
         <div className="ml-auto flex gap-1">
-          <span className="text-slate-400 text-xs">/ 管理 / {activeItem}</span>
+          <span className="text-slate-400 text-xs">
+            / {itemCategory === '配置' ? activeItem : `${itemCategory} / ${activeItem}`}
+          </span>
         </div>
       </div>
 

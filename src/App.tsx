@@ -17,7 +17,7 @@ export default function App() {
     switch (activeItem) {
       case '探针管理':
         return <ProbeManagement />;
-      case '应用管理':
+      case '应用配置':
         return <RuleManagement />;
       default:
         return (

@@ -4,18 +4,25 @@
  */
 
 import { Search, Maximize2, UserCircle, Bell } from 'lucide-react';
+import { getMenuItemCategory } from './Sidebar';
 
 interface HeaderProps {
   activeItem: string;
 }
 
 export default function Header({ activeItem }: HeaderProps) {
+  const itemCategory = getMenuItemCategory(activeItem);
+
   return (
     <header className="h-12 bg-white border-b border-slate-200 flex items-center px-4 justify-between sticky top-0 z-10">
       <div className="flex items-center gap-2 text-sm text-slate-500">
         <span className="text-slate-400">配置</span>
-        <span>/</span>
-        <span className="text-slate-400">管理</span>
+        {itemCategory !== '配置' && (
+          <>
+            <span>/</span>
+            <span className="text-slate-400">{itemCategory === '管理' ? '管理' : itemCategory}</span>
+          </>
+        )}
         <span>/</span>
         <span className="text-slate-600 font-medium">{activeItem}</span>
       </div>

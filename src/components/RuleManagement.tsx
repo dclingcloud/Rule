@@ -284,6 +284,7 @@ function L7ConfigSaveButton({ onClick }: { onClick: () => void }) {
 export default function RuleManagement() {
   const [protocol, setProtocol] = useState('IPV4应用');
   const [activeTab, setActiveTab] = useState('自定义应用(TCP)');
+  const L7_GROUP_PAGE_SIZE = 15;
   const [probeSourceType, setProbeSourceType] = useState('实时探针接口');
   const [selectedProbe, setSelectedProbe] = useState('探针(Retx):接口1');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -494,13 +495,33 @@ export default function RuleManagement() {
     { id: 'index', name: '序号', visible: true },
     { id: 'ruleId', name: '应用ID', visible: true },
     { id: 'name', name: '应用名称', visible: true },
-    { id: 'dstIp', name: '目的IP', visible: true },
-    { id: 'dstPort', name: '目的端口', visible: true },
     { id: 'srcIp', name: '源IP', visible: false },
+    { id: 'dstIp', name: '目的IP', visible: true },
     { id: 'srcPort', name: '源端口', visible: false },
+    { id: 'dstPort', name: '目的端口', visible: true },
   ]);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [colDragOverIndex, setColDragOverIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'IP应用') {
+      setColumns((prev) =>
+        prev.map((col) => {
+          if (col.id === 'srcIp' || col.id === 'dstIp') return { ...col, visible: true };
+          if (col.id === 'srcPort' || col.id === 'dstPort') return { ...col, visible: false };
+          return col;
+        })
+      );
+      return;
+    }
+    setColumns((prev) =>
+      prev.map((col) => {
+        if (col.id === 'srcIp' || col.id === 'srcPort') return { ...col, visible: false };
+        if (col.id === 'dstIp' || col.id === 'dstPort') return { ...col, visible: true };
+        return col;
+      })
+    );
+  }, [activeTab]);
 
   const handleColDragStart = (e: any, index: number) => {
     e.dataTransfer.setData('text/col-index', String(index));
@@ -530,12 +551,20 @@ export default function RuleManagement() {
   const tabs = getTabs(protocol);
   const isKnownApp = activeTab.includes('已知应用');
   const l7GroupOptions = ['HTTP', 'DNS', 'SSL', 'Oracle', 'MySQL', 'PostgreSQL'];
+  const ipProtocolOptions = ['ICMP', 'IGMP', 'ESP', 'AH', 'EIGRP'];
 
   const getDefaultProtocolTypeByTab = (tab: string) => {
     if (tab.includes('TCP')) return 'TCP';
     if (tab.includes('UDP')) return 'UDP';
-    if (tab.includes('IP应用')) return 'ALL';
+    if (tab.includes('IP应用')) return 'ICMP';
     return 'TCP';
+  };
+
+  const getIpProtocolOptionsForForm = (current: string) => {
+    if (current && !ipProtocolOptions.includes(current)) {
+      return [...ipProtocolOptions, current];
+    }
+    return ipProtocolOptions;
   };
 
   // Ensure activeTab is valid when protocol switches
@@ -725,7 +754,12 @@ export default function RuleManagement() {
   const isReadonlyConfigRule = (item: any) => {
     return (item.tab || '').includes('已知应用') || (item.tab === 'IP应用' && !!item.isDefaultIpApp);
   };
+
+  const visibleL7Groups = activeTab === 'L7应用'
+    ? l7GroupOptions.filter((g) => filteredTableData.some((r) => (r.l7Group || '') === g))
+    : [];
   const [collapsedL7GroupsByProtocol, setCollapsedL7GroupsByProtocol] = useState<Record<string, string[]>>({});
+  const [l7GroupPageByProtocol, setL7GroupPageByProtocol] = useState<Record<string, number>>({});
   const collapsedL7Groups = collapsedL7GroupsByProtocol[protocol] || [];
   const isL7GroupCollapsed = (group: string) => collapsedL7Groups.includes(group);
   const toggleL7GroupCollapse = (group: string) => {
@@ -735,10 +769,16 @@ export default function RuleManagement() {
       return { ...prev, [protocol]: next };
     });
   };
+  const getL7GroupPageKey = (group: string) => `${protocol}:${group}`;
+  const getL7GroupPage = (group: string) => l7GroupPageByProtocol[getL7GroupPageKey(group)] || 1;
+  const setL7GroupPage = (group: string, page: number) => {
+    setL7GroupPageByProtocol((prev) => ({ ...prev, [getL7GroupPageKey(group)]: page }));
+  };
   const defaultL7GroupRank = l7GroupOptions.reduce((acc: Record<string, number>, g, idx) => {
     acc[g] = idx;
     return acc;
   }, {});
+
   const displayedTableData = activeTab === 'L7应用'
     ? [...filteredTableData].sort((a, b) => {
         const ga = defaultL7GroupRank[a.l7Group || ''] ?? 999;
@@ -747,6 +787,33 @@ export default function RuleManagement() {
         return (a.priority || 0) - (b.priority || 0);
       })
     : filteredTableData;
+
+  const l7GroupSections = activeTab === 'L7应用'
+    ? visibleL7Groups.map((group) => {
+        const items = displayedTableData.filter((r) => (r.l7Group || '') === group);
+        const totalPages = Math.max(1, Math.ceil(items.length / L7_GROUP_PAGE_SIZE));
+        const currentPage = Math.min(getL7GroupPage(group), totalPages);
+        const start = (currentPage - 1) * L7_GROUP_PAGE_SIZE;
+        return {
+          group,
+          items,
+          pageItems: items.slice(start, start + L7_GROUP_PAGE_SIZE),
+          currentPage,
+          totalPages,
+          totalCount: items.length,
+        };
+      })
+    : [];
+
+  const tableColumns = columns.filter((col) => {
+    if (!col.visible) return false;
+    if (activeTab === 'IP应用' && (col.id === 'srcPort' || col.id === 'dstPort')) return false;
+    return true;
+  });
+
+  const configurableColumns = activeTab === 'IP应用'
+    ? columns.filter((col) => col.id !== 'srcPort' && col.id !== 'dstPort')
+    : columns;
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCopyMode, setIsCopyMode] = useState(false);
@@ -1301,6 +1368,14 @@ export default function RuleManagement() {
     const srcItem = displayedTableData[srcIndex];
     const destItem = displayedTableData[destIndex];
     if (!srcItem || !destItem) return;
+    reorderL7RulesByIds(srcItem.id, destItem.id);
+  };
+
+  const reorderL7RulesByIds = (srcId: number, destId: number) => {
+    if (srcId === destId) return;
+    const srcItem = displayedTableData.find((r) => r.id === srcId);
+    const destItem = displayedTableData.find((r) => r.id === destId);
+    if (!srcItem || !destItem) return;
     const groupKey = srcItem.l7Group || '';
     if (!groupKey || groupKey !== (destItem.l7Group || '')) return;
 
@@ -1457,11 +1532,19 @@ export default function RuleManagement() {
       setValidationError('请先选择L7协议组（HTTP/DNS/SSL/Oracle/MySQL/PostgreSQL）。');
       return;
     }
+    if (activeTab === 'IP应用' && !ipProtocolOptions.includes(formData.protocolType)) {
+      setValidationError('请先选择IP协议（ICMP/IGMP/ESP/AH/EIGRP）。');
+      return;
+    }
 
     const resolvedSrcIp = serializeAdvancedGroup(advancedGroups.srcIp) || formData.srcIp;
-    const resolvedSrcPort = serializeAdvancedGroup(advancedGroups.srcPort) || formData.srcPort;
+    const resolvedSrcPort = activeTab === 'IP应用'
+      ? 'any'
+      : (serializeAdvancedGroup(advancedGroups.srcPort) || formData.srcPort);
     const resolvedDstIp = serializeAdvancedGroup(advancedGroups.dstIp) || formData.dstIp;
-    const resolvedDstPort = serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort;
+    const resolvedDstPort = activeTab === 'IP应用'
+      ? 'any'
+      : (serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort);
 
     if (protocol === '混栈应用') {
       const ipText = `${resolvedSrcIp} ${resolvedDstIp}`;
@@ -1604,10 +1687,78 @@ export default function RuleManagement() {
     setSelectedRuleIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
   };
 
+  const handleOpenL7GroupSettings = (group: string) => {
+    if (group === 'DNS') {
+      const cfg = l7ProtocolConfigs[protocol] || defaultDnsConfig;
+      setDnsConfigDraft({ ...cfg });
+      setShowDnsConfigModal(true);
+      return;
+    }
+    if (group === 'HTTP') {
+      const cfg = l7HttpConfigs[protocol] || defaultHttpConfig;
+      setHttpConfigDraft({ ...cfg });
+      setShowHttpConfigModal(true);
+      return;
+    }
+    if (group === 'MySQL') {
+      const cfg = l7MysqlConfigs[protocol] || defaultMysqlConfig;
+      setMysqlConfigDraft({ ...cfg });
+      setShowMysqlConfigModal(true);
+      return;
+    }
+    if (group === 'Oracle') {
+      const cfg = l7OracleConfigs[protocol] || defaultOracleConfig;
+      setOracleConfigDraft({ ...cfg });
+      setShowOracleConfigModal(true);
+      return;
+    }
+    if (group === 'PostgreSQL') {
+      const cfg = l7PgConfigs[protocol] || defaultPgConfig;
+      setPgConfigDraft({ ...cfg });
+      setShowPgConfigModal(true);
+      return;
+    }
+    if (group === 'SSL') {
+      const cfg = l7SslConfigs[protocol] || {
+        config: { ...defaultSslConfig },
+        domainModels: [...defaultSslDomainModels],
+      };
+      setSslConfigDraft({ ...cfg.config });
+      setSslDomainModelsDraft(cfg.domainModels.map((m) => ({ ...m })));
+      setSslNewDomainModel({ name: '', pattern: '', isRegex: false });
+      setShowSslConfigModal(true);
+    }
+  };
+
   const activeAdvancedTab = isBatchAdvancedMode
     ? activeTab
     : (allRules.find((r) => r.id === activeAdvancedRuleId)?.tab || activeTab);
   const showCpuLogCoreInAdvanced = !isTcpUdpIpAdvancedTab(activeAdvancedTab);
+
+  const tableRenderRows: Array<
+    | { kind: 'l7-header'; group: string }
+    | { kind: 'l7-pagination'; section: (typeof l7GroupSections)[number] }
+    | { kind: 'rule'; item: any; index: number }
+  > = [];
+
+  if (activeTab === 'L7应用') {
+    l7GroupSections.forEach((section) => {
+      tableRenderRows.push({ kind: 'l7-header', group: section.group });
+      if (!isL7GroupCollapsed(section.group)) {
+        section.pageItems.forEach((item) => {
+          const index = displayedTableData.findIndex((r) => r.id === item.id);
+          tableRenderRows.push({ kind: 'rule', item, index });
+        });
+        if (section.totalCount > 0) {
+          tableRenderRows.push({ kind: 'l7-pagination', section });
+        }
+      }
+    });
+  } else {
+    displayedTableData.forEach((item, index) => {
+      tableRenderRows.push({ kind: 'rule', item, index });
+    });
+  }
 
   return (
     <div className="p-4 bg-slate-50 min-h-full">
@@ -1622,7 +1773,7 @@ export default function RuleManagement() {
               <Layers className="w-5 h-5" />
             </div>
             <h2 className="text-base font-bold tracking-tight text-slate-800 flex items-center gap-2">
-              应用管理
+              应用配置
               <span className="text-[10px] bg-sky-50 text-sky-600 font-mono px-1.5 py-0.5 rounded border border-sky-200/50 font-normal">
                 PROBE v2.1
               </span>
@@ -1722,33 +1873,34 @@ export default function RuleManagement() {
       {/* Main Table Section */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
         {/* L2 Classification Sub-Tabs and Meta Options */}
-        <div className="flex flex-col lg:flex-row items-center border-b border-slate-200/60 bg-white">
-          <div className="flex overflow-x-auto no-scrollbar w-full lg:w-auto border-b lg:border-b-0 border-slate-100 p-1">
-            <div className="flex items-center bg-slate-50 p-1 rounded-lg gap-0.5">
-              {tabs.map((tab) => {
-                const isSelected = activeTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => {
-                      setActiveTab(tab);
-                      setSelectedRuleIds([]);
-                      handleResetFilter(); // Reset filter when switching tabs
-                    }}
-                    className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-md transition-all duration-150 ${
-                      isSelected 
-                        ? 'bg-white text-sky-600 shadow-sm border border-slate-250/20 font-semibold' 
-                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                );
-              })}
+        <div className="flex flex-col border-b border-slate-200/60 bg-white">
+          <div className="flex flex-col lg:flex-row items-center">
+            <div className="flex overflow-x-auto no-scrollbar w-full lg:w-auto border-b lg:border-b-0 border-slate-100 p-1">
+              <div className="flex items-center bg-slate-50 p-1 rounded-lg gap-0.5">
+                {tabs.map((tab) => {
+                  const isSelected = activeTab === tab;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setActiveTab(tab);
+                        setSelectedRuleIds([]);
+                        handleResetFilter();
+                      }}
+                      className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-md transition-all duration-150 ${
+                        isSelected
+                          ? 'bg-white text-sky-600 shadow-sm border border-slate-250/20 font-semibold'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          
-          <div className="ml-auto flex items-center gap-3 p-3 w-full lg:w-auto justify-end border-t lg:border-t-0 border-slate-100">
+
+            <div className="ml-auto flex items-center gap-3 p-3 w-full lg:w-auto justify-end border-t lg:border-t-0 border-slate-100">
             <button
               onClick={handleOpenAdd}
               disabled={isKnownApp}
@@ -1817,7 +1969,7 @@ export default function RuleManagement() {
                   <>
                     <div className="fixed inset-0 z-20 bg-transparent" onClick={() => setShowColumnDropdown(false)} />
                     <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-lg shadow-2xl py-2 w-48 z-30 flex flex-col gap-0.5">
-                      {columns.map((col, idx) => (
+                      {configurableColumns.map((col, idx) => (
                         <div 
                           key={col.id}
                           draggable
@@ -1854,8 +2006,7 @@ export default function RuleManagement() {
             </div>
           </div>
         </div>
-
-
+        </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
@@ -1879,7 +2030,7 @@ export default function RuleManagement() {
                   />
                 </th>
 
-                {columns.filter(c => c.visible).map((col) => {
+                {tableColumns.map((col) => {
                   if (col.id === 'index') {
                     return <th key={col.id} className="px-3 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[56px] min-w-[56px] max-w-[56px]">序号</th>;
                   }
@@ -1916,7 +2067,7 @@ export default function RuleManagement() {
                     <span className="text-[10px] text-slate-400 font-mono">过滤</span>
                   </th>
 
-                  {columns.filter(c => c.visible).map((col) => {
+                  {tableColumns.map((col) => {
                     if (col.id === 'index') {
                       return <th key="f-index" className="px-3 py-2 w-[56px] min-w-[56px] max-w-[56px]" />;
                     }
@@ -2000,91 +2151,87 @@ export default function RuleManagement() {
               )}
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {displayedTableData.map((item, index) => (
-                <React.Fragment key={item.id}>
-                {activeTab === 'L7应用' && (index === 0 || (displayedTableData[index - 1]?.l7Group || '') !== (item.l7Group || '')) && (
-                  <tr className="border-y border-sky-100 bg-sky-50/40">
-                    <td colSpan={columns.filter(c => c.visible).length + 2} className="px-4 py-2 text-xs font-semibold text-sky-700">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleL7GroupCollapse(item.l7Group || '');
-                            }}
-                            className="p-1 hover:bg-sky-100 rounded text-slate-500 hover:text-sky-600 transition-colors inline-flex items-center justify-center shrink-0"
-                            title={isL7GroupCollapsed(item.l7Group || '') ? '展开协议组' : '收起协议组'}
-                          >
-                            {isL7GroupCollapsed(item.l7Group || '') ? (
-                              <ChevronRight className="w-4 h-4" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" />
-                            )}
-                          </button>
-                          <span>协议组：{item.l7Group || '未分类'}</span>
+              {tableRenderRows.map((row) => {
+                if (row.kind === 'l7-header') {
+                  return (
+                    <tr key={`l7-header-${row.group}`} className="border-y border-sky-100 bg-sky-50/40">
+                      <td colSpan={tableColumns.length + 2} className="px-4 py-2 text-xs font-semibold text-sky-700">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleL7GroupCollapse(row.group);
+                              }}
+                              className="p-1 hover:bg-sky-100 rounded text-slate-500 hover:text-sky-600 transition-colors inline-flex items-center justify-center shrink-0"
+                              title={isL7GroupCollapsed(row.group) ? '展开协议组' : '收起协议组'}
+                            >
+                              {isL7GroupCollapsed(row.group) ? (
+                                <ChevronRight className="w-4 h-4" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4" />
+                              )}
+                            </button>
+                            <span>协议组：{row.group}</span>
+                          </div>
+                          {['DNS', 'HTTP', 'MySQL', 'Oracle', 'PostgreSQL', 'SSL'].includes(row.group) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenL7GroupSettings(row.group);
+                              }}
+                              className="shrink-0 px-3 py-1 bg-sky-500 hover:bg-sky-600 text-white text-xs rounded transition-colors"
+                            >
+                              设置
+                            </button>
+                          )}
                         </div>
-                        {['DNS', 'HTTP', 'MySQL', 'Oracle', 'PostgreSQL', 'SSL'].includes(item.l7Group || '') && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (item.l7Group === 'DNS') {
-                                const cfg = l7ProtocolConfigs[protocol] || defaultDnsConfig;
-                                setDnsConfigDraft({ ...cfg });
-                                setShowDnsConfigModal(true);
-                                return;
-                              }
+                      </td>
+                    </tr>
+                  );
+                }
 
-                              if (item.l7Group === 'HTTP') {
-                                const cfg = l7HttpConfigs[protocol] || defaultHttpConfig;
-                                setHttpConfigDraft({ ...cfg });
-                                setShowHttpConfigModal(true);
-                                return;
-                              }
+                if (row.kind === 'l7-pagination') {
+                  const section = row.section;
+                  const rangeStart = (section.currentPage - 1) * L7_GROUP_PAGE_SIZE + 1;
+                  const rangeEnd = Math.min(section.currentPage * L7_GROUP_PAGE_SIZE, section.totalCount);
+                  return (
+                    <tr key={`l7-page-${section.group}`} className="bg-slate-50/30 border-b border-slate-100">
+                      <td colSpan={tableColumns.length + 2} className="px-4 py-2.5">
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+                          <span>
+                            显示记录从{rangeStart}到{rangeEnd}，共 {section.totalCount} 条
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={section.currentPage <= 1}
+                              onClick={() => setL7GroupPage(section.group, section.currentPage - 1)}
+                              className="p-1 rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5 rotate-180" />
+                            </button>
+                            <span>第 {section.currentPage} / {section.totalPages} 页</span>
+                            <button
+                              type="button"
+                              disabled={section.currentPage >= section.totalPages}
+                              onClick={() => setL7GroupPage(section.group, section.currentPage + 1)}
+                              className="p-1 rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
 
-                              if (item.l7Group === 'MySQL') {
-                                const cfg = l7MysqlConfigs[protocol] || defaultMysqlConfig;
-                                setMysqlConfigDraft({ ...cfg });
-                                setShowMysqlConfigModal(true);
-                                return;
-                              }
-
-                              if (item.l7Group === 'Oracle') {
-                                const cfg = l7OracleConfigs[protocol] || defaultOracleConfig;
-                                setOracleConfigDraft({ ...cfg });
-                                setShowOracleConfigModal(true);
-                                return;
-                              }
-
-                              if (item.l7Group === 'PostgreSQL') {
-                                const cfg = l7PgConfigs[protocol] || defaultPgConfig;
-                                setPgConfigDraft({ ...cfg });
-                                setShowPgConfigModal(true);
-                                return;
-                              }
-
-                              if (item.l7Group === 'SSL') {
-                                const cfg = l7SslConfigs[protocol] || {
-                                  config: { ...defaultSslConfig },
-                                  domainModels: [...defaultSslDomainModels],
-                                };
-                                setSslConfigDraft({ ...cfg.config });
-                                setSslDomainModelsDraft(cfg.domainModels.map((m) => ({ ...m })));
-                                setSslNewDomainModel({ name: '', pattern: '', isRegex: false });
-                                setShowSslConfigModal(true);
-                              }
-                            }}
-                            className="shrink-0 px-3 py-1 bg-sky-500 hover:bg-sky-600 text-white text-xs rounded transition-colors"
-                          >
-                            设置
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {!(activeTab === 'L7应用' && isL7GroupCollapsed(item.l7Group || '')) && (
+                const { item, index } = row;
+                return (
+                <React.Fragment key={item.id}>
                 <tr 
                   className={`hover:bg-slate-50 group transition-all relative ${
                     dragOverIndex === index ? 'bg-sky-50/40 border-t-2 border-t-sky-500' : ''
@@ -2105,11 +2252,15 @@ export default function RuleManagement() {
                   onDrop={(e) => {
                     if (isKnownApp) return;
                     e.preventDefault();
-                    const srcIdx = parseInt(e.dataTransfer.getData('text/plain'));
-                    if (!isNaN(srcIdx)) {
-                      if (activeTab === 'L7应用') {
-                        reorderL7RulesByDisplayIndexes(srcIdx, index);
-                      } else {
+                    const transferred = e.dataTransfer.getData('text/plain');
+                    if (activeTab === 'L7应用') {
+                      const srcId = parseInt(transferred, 10);
+                      if (!isNaN(srcId)) {
+                        reorderL7RulesByIds(srcId, item.id);
+                      }
+                    } else {
+                      const srcIdx = parseInt(transferred, 10);
+                      if (!isNaN(srcIdx)) {
                         reorderRules(srcIdx, index);
                       }
                     }
@@ -2133,7 +2284,7 @@ export default function RuleManagement() {
                     />
                   </td>
 
-                  {columns.filter(c => c.visible).map((col) => {
+                  {tableColumns.map((col) => {
                     if (col.id === 'index') {
                       return (
                         <td key={col.id} className="px-3 py-2.5 text-slate-500 whitespace-nowrap select-none relative w-[56px] min-w-[56px] max-w-[56px]">
@@ -2143,7 +2294,10 @@ export default function RuleManagement() {
                                 <button
                                   draggable
                                   onDragStart={(e) => {
-                                    e.dataTransfer.setData('text/plain', String(index));
+                                    e.dataTransfer.setData(
+                                      'text/plain',
+                                      activeTab === 'L7应用' ? String(item.id) : String(index)
+                                    );
                                     setDragOverIndex(null);
                                   }}
                                   onClick={(e) => {
@@ -2333,14 +2487,14 @@ export default function RuleManagement() {
                     </div>
                   </td>
                 </tr>
-                )}
                 </React.Fragment>
-              ))}
+                );
+              })}
               {/* Fill with empty rows to maintain height */}
-              {Array.from({ length: Math.max(0, 15 - displayedTableData.length) }).map((_, idx) => (
+              {activeTab !== 'L7应用' && Array.from({ length: Math.max(0, 15 - displayedTableData.length) }).map((_, idx) => (
                 <tr key={`empty-${idx}`} className="h-[41px]">
                   <td className="px-4 py-2.5 w-[45px] min-w-[45px] max-w-[45px] text-center"><div className="w-4 h-4 rounded border border-slate-100 opacity-0 mx-auto"></div></td>
-                  <td className="px-4 py-2.5" colSpan={columns.filter(c => c.visible).length + 1}></td>
+                  <td className="px-4 py-2.5" colSpan={tableColumns.length + 1}></td>
                 </tr>
               ))}
             </tbody>
@@ -2348,6 +2502,11 @@ export default function RuleManagement() {
         </div>
 
         {/* Footer Pagination */}
+        {activeTab === 'L7应用' ? (
+          <div className="px-4 py-3 bg-white border-t border-slate-100 flex items-center justify-end text-xs text-slate-500">
+            共 {filteredTableData.length} 条 L7 应用，各协议组独立分页
+          </div>
+        ) : (
         <div className="px-4 py-3 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div className="flex items-center gap-4">
              <div className="flex items-center gap-2">
@@ -2372,6 +2531,7 @@ export default function RuleManagement() {
            </div>
            <div>显示记录从1到{filteredTableData.length}, 总数 {filteredTableData.length} 条</div>
         </div>
+        )}
       </div>
 
       {/* Add Modal */}
@@ -2602,6 +2762,23 @@ export default function RuleManagement() {
                       </>
                     )}
 
+                    {activeTab === 'IP应用' && (
+                      <>
+                        <label className="text-slate-600 text-right pr-4">协议</label>
+                        <select
+                          disabled={isReadOnly}
+                          className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed text-xs"
+                          value={formData.protocolType}
+                          onChange={(e) => setFormData({ ...formData, protocolType: e.target.value })}
+                        >
+                          <option value="">请选择协议</option>
+                          {getIpProtocolOptionsForForm(formData.protocolType).map((proto) => (
+                            <option key={proto} value={proto}>{proto}</option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+
                     {/* Probes - Moved up and updated with logic */}
                     <label className="text-slate-600 text-right pr-4">探针接口</label>
                     <div className="flex flex-col gap-3">
@@ -2747,12 +2924,18 @@ export default function RuleManagement() {
                           混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址。
                         </div>
                       )}
-                      {[
-                        { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
-                        { key: 'srcPort', title: '源端口组', placeholder: '输入源端口，例如 80,443,1000-2000' },
-                        { key: 'dstIp', title: '目的IP组', placeholder: '输入目的IP，例如 10.0.0.5' },
-                        { key: 'dstPort', title: '目的端口组', placeholder: '输入目的端口，例如 53,8080' },
-                      ].map((group) => (
+                      {(activeTab === 'IP应用'
+                        ? [
+                            { key: 'srcIp', title: '源IP组', placeholder: protocol === '混栈应用' ? '输入源IP，支持 IPv4/IPv6' : '输入源IP，例如 192.168.1.10/24' },
+                            { key: 'dstIp', title: '目的IP组', placeholder: protocol === '混栈应用' ? '输入目的IP，支持 IPv4/IPv6' : '输入目的IP，例如 10.0.0.5' },
+                          ]
+                        : [
+                            { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
+                            { key: 'srcPort', title: '源端口组', placeholder: '输入源端口，例如 80,443,1000-2000' },
+                            { key: 'dstIp', title: '目的IP组', placeholder: '输入目的IP，例如 10.0.0.5' },
+                            { key: 'dstPort', title: '目的端口组', placeholder: '输入目的端口，例如 53,8080' },
+                          ]
+                      ).map((group) => (
                         <div key={group.key} className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
                           <div className="flex items-center justify-between">
                             <div className="text-xs font-semibold text-slate-700">{group.title}</div>
