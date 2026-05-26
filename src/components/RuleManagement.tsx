@@ -45,6 +45,112 @@ const PROBE_OPTIONS = [
   { value: '探针(重传):接口1', label: '探针(重传):接口1' },
 ];
 
+const ALL_PROBE_VALUES = PROBE_OPTIONS.map((o) => o.value);
+
+function getRuleProbeList(portVal: string): string[] {
+  if (portVal === '所有接口' || portVal === '所有探针' || portVal === '所有') {
+    return [...ALL_PROBE_VALUES];
+  }
+  return (portVal || '')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function ruleBoundToProbe(portVal: string, probe: string): boolean {
+  return getRuleProbeList(portVal).includes(probe);
+}
+
+function parseIpv4(ip: string): number | null {
+  const trimmed = ip.trim();
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(trimmed)) return null;
+  const parts = trimmed.split('.').map((p) => parseInt(p, 10));
+  if (parts.some((p) => isNaN(p) || p < 0 || p > 255)) return null;
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function parseIpv4Cidr(token: string): { network: number; mask: number } | null {
+  const slashIdx = token.indexOf('/');
+  if (slashIdx === -1) return null;
+  const ipPart = token.slice(0, slashIdx).trim();
+  const prefix = parseInt(token.slice(slashIdx + 1).trim(), 10);
+  const ip = parseIpv4(ipPart);
+  if (ip === null || isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return { network: ip & mask, mask };
+}
+
+function ipv4InCidr(ip: string, cidrToken: string): boolean {
+  const cidr = parseIpv4Cidr(cidrToken);
+  const ipNum = parseIpv4(ip);
+  if (!cidr || ipNum === null) return false;
+  return (ipNum & cidr.mask) === cidr.network;
+}
+
+function ipv4InRange(ip: string, rangeToken: string): boolean {
+  const dashIdx = rangeToken.indexOf('-');
+  if (dashIdx === -1) return false;
+  const start = parseIpv4(rangeToken.slice(0, dashIdx).trim());
+  const end = parseIpv4(rangeToken.slice(dashIdx + 1).trim());
+  const ipNum = parseIpv4(ip);
+  if (start === null || end === null || ipNum === null) return false;
+  return ipNum >= Math.min(start, end) && ipNum <= Math.max(start, end);
+}
+
+function tokenizeIpField(ipField: string): string[] {
+  if (!ipField || ipField.trim().toLowerCase() === 'any') return [];
+  return ipField
+    .split(/[,，]/)
+    .flatMap((segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) return [];
+      if (/\s+\/\s+/.test(trimmed)) {
+        return trimmed.split(/\s+\/\s+/).map((part) => part.trim()).filter(Boolean);
+      }
+      return [trimmed];
+    });
+}
+
+function ipFieldMatchesQuery(ipField: string, query: string): boolean {
+  const q = query.trim();
+  if (!q) return true;
+  const lowerField = (ipField || '').toLowerCase();
+  const lowerQ = q.toLowerCase();
+  if (lowerField.includes(lowerQ)) return true;
+
+  if (parseIpv4(q) === null) return false;
+
+  for (const token of tokenizeIpField(ipField)) {
+    if (token.includes('/') && parseIpv4(token.split('/')[0]?.trim() || '') !== null) {
+      if (ipv4InCidr(q, token)) return true;
+      continue;
+    }
+    if (token.includes('-') && parseIpv4(token.split('-')[0]?.trim() || '') !== null) {
+      if (ipv4InRange(q, token)) return true;
+      continue;
+    }
+    const tokenIp = parseIpv4(token);
+    if (tokenIp !== null && tokenIp === parseIpv4(q)) return true;
+  }
+  return false;
+}
+
+function getDefaultTimeoutByTab(tab: string): string {
+  if (tab.includes('UDP')) return '30';
+  return '300';
+}
+
+function validateAppSessionDetails(value: string): string | null {
+  if (value === '不同值') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return 'ClickHouse AppSession详单不能为空。';
+  const num = parseInt(trimmed, 10);
+  if (isNaN(num) || String(num) !== trimmed || num < 1 || num > 5000000) {
+    return 'ClickHouse AppSession详单需在 1-5000000 范围内。';
+  }
+  return null;
+}
+
 const PROBE_SOURCE_OPTIONS = [
   { value: '实时探针接口', label: '实时探针接口' },
   { value: '离线任务', label: '离线任务' },
@@ -246,8 +352,259 @@ function L7ConfigSaveButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+type L7RuleAdvancedConfig = {
+  timeout: string;
+  performanceRapid: string;
+  performanceNormal: string;
+  p2AppSessionDetails: string;
+  p2CpuStatsCore: string;
+  p2CpuLogCore: string;
+  p2GiantFrameThreshold: string;
+  p2IgnoreClientRstFail: string;
+  p2RecordAppKpi: string;
+  p2AppAdaptiveCaptureLength: string;
+  p2ReassemblyFailContinue: string;
+  p2Srv6Parsing: string;
+  p2ConnInterStateHandling: string;
+  p2RuleBalancing: string;
+};
+
+const defaultL7RuleAdvancedConfig: L7RuleAdvancedConfig = {
+  timeout: '300',
+  performanceRapid: '50',
+  performanceNormal: '500',
+  p2AppSessionDetails: '100000',
+  p2CpuStatsCore: '',
+  p2CpuLogCore: '0',
+  p2GiantFrameThreshold: '1460',
+  p2IgnoreClientRstFail: '关闭',
+  p2RecordAppKpi: '开启',
+  p2AppAdaptiveCaptureLength: '开启',
+  p2ReassemblyFailContinue: '关闭',
+  p2Srv6Parsing: '关闭',
+  p2ConnInterStateHandling: '开启',
+  p2RuleBalancing: '未配置',
+};
+
+const normalizeL7RuleAdvancedConfig = (cfg: Partial<L7RuleAdvancedConfig> | undefined): L7RuleAdvancedConfig => ({
+  ...defaultL7RuleAdvancedConfig,
+  ...cfg,
+});
+
+function L7RuleAdvancedConfigSection({
+  value,
+  onChange,
+  timeoutHint = 'TCP默认300s，UDP默认30s',
+  showTooltip,
+}: {
+  value: L7RuleAdvancedConfig;
+  onChange: (next: L7RuleAdvancedConfig) => void;
+  timeoutHint?: string;
+  showTooltip?: (text: string, e: React.MouseEvent<HTMLElement>) => void;
+}) {
+  const patch = (partial: Partial<L7RuleAdvancedConfig>) => onChange({ ...value, ...partial });
+
+  return (
+    <L7ConfigSection title="规则高级配置">
+      <L7ConfigFormRow label="连接超时阈值">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="number"
+            value={value.timeout}
+            onChange={(e) => patch({ timeout: e.target.value })}
+            className={L7_CONFIG_INPUT_SM}
+            placeholder="300"
+          />
+          <span className="text-slate-500 text-sm">秒</span>
+          <span className="text-slate-400 text-xs">({timeoutHint})</span>
+        </div>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="应用性能时延区间">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-green-600 whitespace-nowrap">响应迅速</span>
+          <span className="text-slate-400">≤</span>
+          <div className="flex items-center border border-slate-200 rounded px-2 py-1 bg-white">
+            <input
+              type="text"
+              className="w-14 py-0.5 outline-none text-center text-sm"
+              value={value.performanceRapid}
+              onChange={(e) => patch({ performanceRapid: e.target.value })}
+            />
+            <span className="text-slate-400 px-1.5 border-l border-slate-100 ml-1 text-xs">毫秒</span>
+          </div>
+          <span className="text-slate-400">{'<'}</span>
+          <span className="text-amber-600 whitespace-nowrap">响应正常</span>
+          <span className="text-slate-400">≤</span>
+          <div className="flex items-center border border-slate-200 rounded px-2 py-1 bg-white">
+            <input
+              type="text"
+              className="w-14 py-0.5 outline-none text-center text-sm"
+              value={value.performanceNormal}
+              onChange={(e) => patch({ performanceNormal: e.target.value })}
+            />
+            <span className="text-slate-400 px-1.5 border-l border-slate-100 ml-1 text-xs">毫秒</span>
+          </div>
+          <span className="text-slate-400">{'<'}</span>
+          <span className="text-red-600 whitespace-nowrap">响应超时</span>
+        </div>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="ClickHouse AppSession详单">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={5000000}
+            value={value.p2AppSessionDetails}
+            onChange={(e) => patch({ p2AppSessionDetails: e.target.value })}
+            className={`${L7_CONFIG_INPUT} max-w-[320px]`}
+            placeholder="100000"
+          />
+          <span className="text-slate-400 text-xs">支持范围 1-5000000</span>
+        </div>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="CPU分配(Statistics core ID)">
+        <input
+          type="text"
+          value={value.p2CpuStatsCore}
+          onChange={(e) => patch({ p2CpuStatsCore: e.target.value })}
+          placeholder="请输入核心 ID (选填)"
+          className={`${L7_CONFIG_INPUT} max-w-[320px]`}
+        />
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="CPU分配(Log core ID)">
+        <input
+          type="text"
+          value={value.p2CpuLogCore}
+          onChange={(e) => patch({ p2CpuLogCore: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px]`}
+        />
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="应用巨帧包长阈值">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={value.p2GiantFrameThreshold}
+            onChange={(e) => patch({ p2GiantFrameThreshold: e.target.value })}
+            className={`${L7_CONFIG_INPUT} max-w-[320px]`}
+          />
+          {showTooltip ? (
+            <Info
+              onMouseEnter={(e) => showTooltip('用于统计应用会话中，客户端方向与服务器方向超过巨帧包长阈值的报文数量。', e)}
+              onMouseLeave={() => {}}
+              className="w-4 h-4 text-slate-400 cursor-help"
+            />
+          ) : null}
+        </div>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="忽略客户端RST建连失败">
+        <select
+          value={value.p2IgnoreClientRstFail}
+          onChange={(e) => patch({ p2IgnoreClientRstFail: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="记录APP KPI">
+        <select
+          value={value.p2RecordAppKpi}
+          onChange={(e) => patch({ p2RecordAppKpi: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="APP自适应存包长度">
+        <select
+          value={value.p2AppAdaptiveCaptureLength}
+          onChange={(e) => patch({ p2AppAdaptiveCaptureLength: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="重组失败继续处理">
+        <select
+          value={value.p2ReassemblyFailContinue}
+          onChange={(e) => patch({ p2ReassemblyFailContinue: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="SRv6解析">
+        <select
+          value={value.p2Srv6Parsing}
+          onChange={(e) => patch({ p2Srv6Parsing: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="连接中间状态处理">
+        <select
+          value={value.p2ConnInterStateHandling}
+          onChange={(e) => patch({ p2ConnInterStateHandling: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+
+      <L7ConfigFormRow label="规则平衡">
+        <select
+          value={value.p2RuleBalancing}
+          onChange={(e) => patch({ p2RuleBalancing: e.target.value })}
+          className={`${L7_CONFIG_INPUT} max-w-[320px] bg-white`}
+        >
+          <option value="未配置">未配置</option>
+          <option value="开启">开启</option>
+          <option value="关闭">关闭</option>
+        </select>
+      </L7ConfigFormRow>
+    </L7ConfigSection>
+  );
+}
+
 const CAPTURE_LENGTH_OPTIONS = ['全包', '未配置', '不存包', '54字节', '64字节', '128字节', '自定义'];
 const DEFAULT_CAPTURE_LENGTH = '64字节';
+const BATCH_MIXED_VALUE = '不同值';
+const ADVANCED_MODAL_FIELD_KEYS = [
+  'timeout',
+  'performanceRapid',
+  'performanceNormal',
+  'p2AppSessionDetails',
+  'p2CpuStatsCore',
+  'p2CpuLogCore',
+  'p2GiantFrameThreshold',
+  'p2IgnoreClientRstFail',
+  'p2RecordAppKpi',
+  'p2AppAdaptiveCaptureLength',
+  'p2ReassemblyFailContinue',
+  'p2Srv6Parsing',
+  'p2ConnInterStateHandling',
+  'p2RuleBalancing',
+  'p2IcmpEventRecord',
+] as const;
+const isBatchMixedValue = (value: unknown): value is typeof BATCH_MIXED_VALUE =>
+  value === BATCH_MIXED_VALUE;
 
 const getCaptureLengthDisplay = (item: { storageLength?: string; customCaptureLength?: string }) => {
   const selected = item.storageLength || '未配置';
@@ -279,6 +636,7 @@ export default function RuleManagement() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [pendingDeleteRule, setPendingDeleteRule] = useState<{ id: number; name: string } | null>(null);
   const [pendingEnableToggle, setPendingEnableToggle] = useState<{ id: number; name: string; nextEnabled: boolean } | null>(null);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [importSelectedInterfaces, setImportSelectedInterfaces] = useState<string[]>(['Probe / Lab']);
   const [importConflictStrategy, setImportConflictStrategy] = useState<'merge' | 'overwrite'>('merge');
   const [importedFile, setImportedFile] = useState<{ name: string; size: number } | null>(null);
@@ -508,8 +866,24 @@ export default function RuleManagement() {
 
   const tabs = getTabs(protocol);
   const isKnownApp = activeTab.includes('已知应用');
-  const l7GroupOptions = ['HTTP', 'DNS', 'SSL', 'Oracle', 'MySQL', 'PostgreSQL'];
-  const ipProtocolOptions = ['ICMP', 'IGMP', 'ESP', 'AH', 'EIGRP'];
+  const l7GroupOptions = ['DNS(TCP)', 'DNS(UDP)', 'HTTP', 'SSL', 'Oracle', 'MySQL', 'PostgreSQL'];
+  const isDnsL7Group = (group: string) => group === 'DNS(TCP)' || group === 'DNS(UDP)' || group === 'DNS';
+  const getTransportByL7Group = (group: string) => {
+    if (group === 'DNS(UDP)') return 'UDP';
+    return 'TCP';
+  };
+  const getL7GroupOptionsForForm = (current: string) => {
+    if (current && !l7GroupOptions.includes(current)) {
+      return [...l7GroupOptions, current];
+    }
+    return l7GroupOptions;
+  };
+  const l7GroupsWithSettings = (group: string) =>
+    isDnsL7Group(group) || ['HTTP', 'MySQL', 'Oracle', 'PostgreSQL', 'SSL'].includes(group);
+  const ipProtocolOptions = ['ICMP', 'IGMP', 'ESP', 'AH', 'EIGRP', 'OSPF', 'UNICAST', 'MULTICAST', 'ALL'];
+  const ICMP_EVENT_RECORD_OPTIONS = ['关键错误', '所有类型', '关闭'] as const;
+  const isIcmpProtocolType = (protocolType: string) =>
+    protocolType === 'ICMP' || protocolType === 'ICMPV6';
 
   const getDefaultProtocolTypeByTab = (tab: string) => {
     if (tab.includes('TCP')) return 'TCP';
@@ -561,6 +935,8 @@ export default function RuleManagement() {
     // IPV4 L7 Layer
     { id: 13, ruleId: '70001', name: 'IPv4-L7-WeChat', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'SSL', description: '深度解析微信通讯流指纹', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any', storageLength: '自定义', customCaptureLength: '256' },
     { id: 14, ruleId: '70002', name: 'IPv4-L7-Amap', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'HTTP', description: '高德地图时空定位API数据分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 53, ruleId: '70003', name: 'IPv4-L7-DNS-TCP', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'DNS(TCP)', description: 'L7 DNS over TCP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
+    { id: 54, ruleId: '70004', name: 'IPv4-L7-DNS-UDP', protocol_type: 'UDP', port: '探针(Retx):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'DNS(UDP)', description: 'L7 DNS over UDP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
 
     // IPV6 TCP
     { id: 15, ruleId: '60001', name: 'IPv6-Custom-Cloud', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 1, protocol: 'IPV6应用', tab: '自定义应用(TCP)', description: 'IPv6原生微服务应用管理网关', srcIp: '2001:db8::/32', srcPort: 'any', dstIp: '2001:db8:1::100', dstPort: '8080' },
@@ -674,7 +1050,7 @@ export default function RuleManagement() {
     // Check Tab Match
     if (item.tab !== activeTab) return false;
 
-    // 接口下拉仅作为顶部筛选展示，不再联动下方规则列表。
+    if (!ruleBoundToProbe(item.port || '', selectedProbe)) return false;
 
     // Filter by Application Name (应用名称)
     if (appliedFilterName.trim() !== '') {
@@ -683,9 +1059,8 @@ export default function RuleManagement() {
 
     // Filter by Source or Destination IP (源IP / 目的IP)
     if (appliedFilterIp.trim() !== '') {
-      const q = appliedFilterIp.toLowerCase();
-      const matchSrc = (item.srcIp || '').toLowerCase().includes(q);
-      const matchDst = (item.dstIp || '').toLowerCase().includes(q);
+      const matchSrc = ipFieldMatchesQuery(item.srcIp || '', appliedFilterIp);
+      const matchDst = ipFieldMatchesQuery(item.dstIp || '', appliedFilterIp);
       if (!matchSrc && !matchDst) return false;
     }
 
@@ -713,8 +1088,15 @@ export default function RuleManagement() {
     return (item.tab || '').includes('已知应用') || (item.tab === 'IP应用' && !!item.isDefaultIpApp);
   };
 
+  const defaultL7GroupRank = l7GroupOptions.reduce((acc: Record<string, number>, g, idx) => {
+    acc[g] = idx;
+    return acc;
+  }, { DNS: 0 } as Record<string, number>);
+
   const visibleL7Groups = activeTab === 'L7应用'
-    ? l7GroupOptions.filter((g) => filteredTableData.some((r) => (r.l7Group || '') === g))
+    ? [...new Set(filteredTableData.map((r) => r.l7Group || '').filter(Boolean))].sort(
+        (a, b) => (defaultL7GroupRank[a] ?? 999) - (defaultL7GroupRank[b] ?? 999)
+      )
     : [];
   const [collapsedL7GroupsByProtocol, setCollapsedL7GroupsByProtocol] = useState<Record<string, string[]>>({});
   const [l7GroupPageByProtocol, setL7GroupPageByProtocol] = useState<Record<string, number>>({});
@@ -732,10 +1114,6 @@ export default function RuleManagement() {
   const setL7GroupPage = (group: string, page: number) => {
     setL7GroupPageByProtocol((prev) => ({ ...prev, [getL7GroupPageKey(group)]: page }));
   };
-  const defaultL7GroupRank = l7GroupOptions.reduce((acc: Record<string, number>, g, idx) => {
-    acc[g] = idx;
-    return acc;
-  }, {});
 
   const displayedTableData = activeTab === 'L7应用'
     ? [...filteredTableData].sort((a, b) => {
@@ -782,6 +1160,7 @@ export default function RuleManagement() {
   const [editLockedProbes, setEditLockedProbes] = useState<string[]>([]);
   const [activeAdvancedRuleId, setActiveAdvancedRuleId] = useState<number | null>(null);
   const [activeAdvancedRuleName, setActiveAdvancedRuleName] = useState('');
+  const [activeAdvancedProtocolType, setActiveAdvancedProtocolType] = useState('');
   const [activeAdvancedInterfaces, setActiveAdvancedInterfaces] = useState<string[]>([]);
   const [activeAdvancedInterface, setActiveAdvancedInterface] = useState('');
   const [advancedInterfaceDrafts, setAdvancedInterfaceDrafts] = useState<Record<string, any>>({});
@@ -803,14 +1182,18 @@ export default function RuleManagement() {
       p2IgnoreConnFailMeta: '关闭',
       p2ConnFailDetails: '10',
       p2ConnFailTopClients: '10',
-      p2AppSessionDetails: '0',
+      p2AppSessionDetails: '100000',
       p2CpuStatsCore: '',
       p2CpuLogCore: '0',
       p2GiantFrameThreshold: '1460',
       p2IgnoreClientRstFail: '关闭',
+      p2RecordAppKpi: '开启',
+      p2AppAdaptiveCaptureLength: '开启',
+      p2ReassemblyFailContinue: '关闭',
       p2Srv6Parsing: '关闭',
       p2ConnInterStateHandling: '开启',
-      p2RuleBalancing: '未配置'
+      p2RuleBalancing: '未配置',
+      p2IcmpEventRecord: '关键错误'
     };
     if (!p2Val) return defaultP2;
     try {
@@ -856,14 +1239,18 @@ export default function RuleManagement() {
     p2IgnoreConnFailMeta: '关闭',
     p2ConnFailDetails: '10',
     p2ConnFailTopClients: '10',
-    p2AppSessionDetails: '0',
+    p2AppSessionDetails: '100000',
     p2CpuStatsCore: '',
     p2CpuLogCore: '0',
     p2GiantFrameThreshold: '1460',
     p2IgnoreClientRstFail: '关闭',
+    p2RecordAppKpi: '开启',
+    p2AppAdaptiveCaptureLength: '开启',
+    p2ReassemblyFailContinue: '关闭',
     p2Srv6Parsing: '关闭',
     p2ConnInterStateHandling: '开启',
-    p2RuleBalancing: '未配置'
+    p2RuleBalancing: '未配置',
+    p2IcmpEventRecord: '关键错误'
   });
 
   const createAdvancedItem = (value: string = '', mode: 'base' | 'exclude' = 'base') => ({
@@ -881,15 +1268,7 @@ export default function RuleManagement() {
 
   const [advancedGroups, setAdvancedGroups] = useState<any>(createInitialAdvancedGroups());
 
-  const getRuleInterfaces = (portVal: string) => {
-    if (portVal === '所有接口' || portVal === '所有探针' || portVal === '所有') {
-      return [...probeOptions];
-    }
-    return (portVal || '')
-      .split(';')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  };
+  const getRuleInterfaces = (portVal: string) => getRuleProbeList(portVal);
 
   const isTcpUdpIpAdvancedTab = (tab: string) =>
     tab === '自定义应用(TCP)' || tab === '自定义应用(UDP)' || tab === 'IP应用';
@@ -915,9 +1294,13 @@ export default function RuleManagement() {
     p2CpuLogCore: src.p2CpuLogCore,
     p2GiantFrameThreshold: src.p2GiantFrameThreshold,
     p2IgnoreClientRstFail: src.p2IgnoreClientRstFail,
+    p2RecordAppKpi: src.p2RecordAppKpi,
+    p2AppAdaptiveCaptureLength: src.p2AppAdaptiveCaptureLength,
+    p2ReassemblyFailContinue: src.p2ReassemblyFailContinue,
     p2Srv6Parsing: src.p2Srv6Parsing,
     p2ConnInterStateHandling: src.p2ConnInterStateHandling,
-    p2RuleBalancing: src.p2RuleBalancing
+    p2RuleBalancing: src.p2RuleBalancing,
+    p2IcmpEventRecord: src.p2IcmpEventRecord
   });
 
   const composeP2Serialized = (src: any) => JSON.stringify({
@@ -937,10 +1320,72 @@ export default function RuleManagement() {
     p2CpuLogCore: src.p2CpuLogCore,
     p2GiantFrameThreshold: src.p2GiantFrameThreshold,
     p2IgnoreClientRstFail: src.p2IgnoreClientRstFail,
+    p2RecordAppKpi: src.p2RecordAppKpi,
+    p2AppAdaptiveCaptureLength: src.p2AppAdaptiveCaptureLength,
+    p2ReassemblyFailContinue: src.p2ReassemblyFailContinue,
     p2Srv6Parsing: src.p2Srv6Parsing,
     p2ConnInterStateHandling: src.p2ConnInterStateHandling,
-    p2RuleBalancing: src.p2RuleBalancing
+    p2RuleBalancing: src.p2RuleBalancing,
+    p2IcmpEventRecord: src.p2IcmpEventRecord
   });
+
+  const buildAdvancedPayloadForRule = (src: any, rule: any, isBatch = false) => {
+    const existing = getRuleAdvancedSnapshot(rule);
+    const picked = pickAdvancedFields(src);
+    const resolved: Record<string, any> = {};
+
+    Object.keys(picked).forEach((key) => {
+      resolved[key] = isBatch && isBatchMixedValue(picked[key])
+        ? existing[key]
+        : picked[key];
+    });
+
+    if (isIcmpProtocolType(rule?.protocol_type || '')) {
+      resolved.p2IcmpEventRecord = isBatch && isBatchMixedValue(src.p2IcmpEventRecord)
+        ? existing.p2IcmpEventRecord
+        : (src.p2IcmpEventRecord || '关键错误');
+    } else {
+      resolved.p2IcmpEventRecord = existing.p2IcmpEventRecord;
+    }
+
+    return resolved;
+  };
+
+  const getRuleAdvancedSnapshot = (rule: any) => {
+    const p2Vals = parseP2(rule.p2);
+    return {
+      timeout: rule.timeout !== undefined ? String(rule.timeout) : (rule.protocol_type === 'UDP' ? '30' : '300'),
+      performanceRapid: rule.performanceRapid !== undefined ? String(rule.performanceRapid) : '50',
+      performanceNormal: rule.performanceNormal !== undefined ? String(rule.performanceNormal) : '500',
+      storageLength: rule.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: rule.customCaptureLength || '',
+      ...p2Vals,
+    };
+  };
+
+  const mergeBatchAdvancedFormFields = (rules: any[]) => {
+    if (rules.length === 0) return {};
+    const snapshots = rules.map(getRuleAdvancedSnapshot);
+    const merged: Record<string, string> = {};
+
+    ADVANCED_MODAL_FIELD_KEYS.forEach((field) => {
+      const values = snapshots.map((snapshot) => String(snapshot[field] ?? ''));
+      const unique = [...new Set(values)];
+      merged[field] = unique.length === 1 ? unique[0] : BATCH_MIXED_VALUE;
+    });
+
+    return merged;
+  };
+
+  const getAdvancedFieldDisplay = (value: string, defaultPlaceholder = '') => ({
+    displayValue: isBatchMixedValue(value) ? '' : value,
+    displayPlaceholder: isBatchMixedValue(value) ? BATCH_MIXED_VALUE : defaultPlaceholder,
+    isMixed: isBatchMixedValue(value),
+  });
+
+  const renderBatchMixedSelectOption = (value: string) => (
+    isBatchMixedValue(value) ? <option value={BATCH_MIXED_VALUE}>{BATCH_MIXED_VALUE}</option> : null
+  );
 
   const updateAdvancedItem = (groupKey: string, idx: number, patch: any) => {
     setAdvancedGroups((prev: any) => {
@@ -1013,7 +1458,7 @@ export default function RuleManagement() {
       performanceNormal: '500',
       storageLength: DEFAULT_CAPTURE_LENGTH,
     customCaptureLength: '',
-      timeout: '300',
+      timeout: getDefaultTimeoutByTab(activeTab),
       p2: '',
       p2GroupType: '客户端按站点分组',
       p2ShowClientIpPortSite: false,
@@ -1026,14 +1471,18 @@ export default function RuleManagement() {
       p2IgnoreConnFailMeta: '关闭',
       p2ConnFailDetails: '10',
       p2ConnFailTopClients: '10',
-      p2AppSessionDetails: '0',
+      p2AppSessionDetails: '100000',
       p2CpuStatsCore: '',
       p2CpuLogCore: '0',
       p2GiantFrameThreshold: '1460',
       p2IgnoreClientRstFail: '关闭',
+      p2RecordAppKpi: '开启',
+      p2AppAdaptiveCaptureLength: '开启',
+      p2ReassemblyFailContinue: '关闭',
       p2Srv6Parsing: '关闭',
       p2ConnInterStateHandling: '开启',
-      p2RuleBalancing: '未配置'
+      p2RuleBalancing: '未配置',
+      p2IcmpEventRecord: '关键错误'
     });
     setAdvancedGroups(createInitialAdvancedGroups());
     setShowAddModal(true);
@@ -1220,6 +1669,7 @@ export default function RuleManagement() {
     setBatchAdvancedRuleIds([]);
     setActiveAdvancedRuleId(null);
     setActiveAdvancedRuleName('');
+    setActiveAdvancedProtocolType('');
     setActiveAdvancedInterface('');
     setActiveAdvancedInterfaces([]);
     setAdvancedInterfaceDrafts({});
@@ -1259,13 +1709,14 @@ export default function RuleManagement() {
     setIsReadOnly(false);
     setActiveAdvancedRuleId(item.id);
     setActiveAdvancedRuleName(item.name || '');
+    setActiveAdvancedProtocolType(item.protocol_type || '');
     setActiveAdvancedInterfaces(interfaces);
     setActiveAdvancedInterface(firstIface);
     setAdvancedInterfaceDrafts(drafts);
     setFormData((prev) => ({
       ...prev,
+      ...drafts[firstIface],
       protocolType: item.protocol_type || prev.protocolType,
-      ...drafts[firstIface]
     }));
     setShowAddModal(true);
   };
@@ -1280,9 +1731,13 @@ export default function RuleManagement() {
       alert('请先勾选需要批量修改高级配置的应用。');
       return;
     }
-    const firstRule = allRules.find((r) => r.id === ids[0]);
+    const selectedRules = ids
+      .map((id) => allRules.find((r) => r.id === id))
+      .filter(Boolean) as any[];
+    const firstRule = selectedRules[0];
     if (!firstRule) return;
     const p2Vals = parseP2(firstRule.p2);
+    const mergedFields = mergeBatchAdvancedFormFields(selectedRules);
     setIsAdvancedOnlyMode(true);
     setIsBatchAdvancedMode(true);
     setBatchAdvancedRuleIds(ids);
@@ -1291,18 +1746,17 @@ export default function RuleManagement() {
     setIsReadOnly(false);
     setActiveAdvancedRuleId(null);
     setActiveAdvancedRuleName(`批量(${ids.length}条)`);
+    setActiveAdvancedProtocolType('');
     setActiveAdvancedInterfaces([]);
     setActiveAdvancedInterface('');
     setAdvancedInterfaceDrafts({});
     setFormData((prev) => ({
       ...prev,
       protocolType: firstRule.protocol_type || prev.protocolType,
-      timeout: firstRule.timeout !== undefined ? String(firstRule.timeout) : (firstRule.protocol_type === 'UDP' ? '30' : '300'),
-      performanceRapid: firstRule.performanceRapid !== undefined ? String(firstRule.performanceRapid) : '50',
-      performanceNormal: firstRule.performanceNormal !== undefined ? String(firstRule.performanceNormal) : '500',
       storageLength: firstRule.storageLength || DEFAULT_CAPTURE_LENGTH,
       customCaptureLength: firstRule.customCaptureLength || '',
-      ...p2Vals
+      ...p2Vals,
+      ...mergedFields,
     }));
     setShowAddModal(true);
   };
@@ -1444,23 +1898,31 @@ export default function RuleManagement() {
   };
 
   const handleSaveModal = () => {
+    if (!isBatchMixedValue(formData.p2AppSessionDetails)) {
+      const appSessionError = validateAppSessionDetails(formData.p2AppSessionDetails);
+      if (appSessionError) {
+        setValidationError(appSessionError);
+        return;
+      }
+    }
+
     if (isAdvancedOnlyMode) {
       if (isBatchAdvancedMode) {
-        const batchAdvanced = pickAdvancedFields(formData);
-        const p2Serialized = composeP2Serialized(batchAdvanced);
         setAllRules((prev) => prev.map((r) => {
           if (!batchAdvancedRuleIds.includes(r.id)) return r;
+          const ruleAdvanced = buildAdvancedPayloadForRule(formData, r, true);
+          const p2Serialized = composeP2Serialized(ruleAdvanced);
           const interfaces = getRuleInterfaces(r.port || '');
           const interfaceAdvancedConfigs: Record<string, any> = {};
           interfaces.forEach((iface) => {
-            interfaceAdvancedConfigs[iface] = { ...batchAdvanced };
+            interfaceAdvancedConfigs[iface] = { ...ruleAdvanced };
           });
           return {
             ...r,
-            timeout: batchAdvanced.timeout,
-            performanceRapid: batchAdvanced.performanceRapid,
-            performanceNormal: batchAdvanced.performanceNormal,
-            storageLength: batchAdvanced.storageLength,
+            timeout: ruleAdvanced.timeout,
+            performanceRapid: ruleAdvanced.performanceRapid,
+            performanceNormal: ruleAdvanced.performanceNormal,
+            storageLength: ruleAdvanced.storageLength,
             p2: p2Serialized,
             interfaceAdvancedConfigs
           };
@@ -1469,7 +1931,9 @@ export default function RuleManagement() {
         return;
       }
       if (activeAdvancedRuleId === null) return;
-      const activeAdvanced = pickAdvancedFields(formData);
+      const editingRule = allRules.find((r) => r.id === activeAdvancedRuleId);
+      if (!editingRule) return;
+      const activeAdvanced = buildAdvancedPayloadForRule(formData, editingRule);
       const p2Serialized = composeP2Serialized(activeAdvanced);
       setAllRules((prev) => prev.map((r) => {
         if (r.id !== activeAdvancedRuleId) return r;
@@ -1494,11 +1958,11 @@ export default function RuleManagement() {
 
     if (!formData.name.trim()) return;
     if (activeTab === 'L7应用' && !formData.l7Group) {
-      setValidationError('请先选择L7协议组（HTTP/DNS/SSL/Oracle/MySQL/PostgreSQL）。');
+      setValidationError('请先选择L7协议（DNS(TCP)/DNS(UDP)/HTTP/SSL/Oracle/MySQL/PostgreSQL）。');
       return;
     }
     if (activeTab === 'IP应用' && !ipProtocolOptions.includes(formData.protocolType)) {
-      setValidationError('请先选择IP协议（ICMP/IGMP/ESP/AH/EIGRP）。');
+      setValidationError('请先选择IP协议（ICMP/IGMP/ESP/AH/EIGRP/OSPF/UNICAST/MULTICAST/ALL）。');
       return;
     }
 
@@ -1529,6 +1993,9 @@ export default function RuleManagement() {
 
     setValidationError(null);
 
+    const resolvedProtocolType = activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType;
+    const resolvedTimeout = resolvedProtocolType === 'UDP' ? '30' : formData.timeout;
+
     const p2Serialized = composeP2Serialized(formData);
 
     if (isEditMode && activeEditId !== null) {
@@ -1537,11 +2004,11 @@ export default function RuleManagement() {
           return {
             ...r,
             name: formData.name,
-            protocol_type: formData.protocolType,
+            protocol_type: activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
             l7Group: activeTab === 'L7应用' ? formData.l7Group : r.l7Group,
             port: formData.probeMode === 'all' ? '所有接口' : (formData.selectedProbes.length > 0 ? formData.selectedProbes.join('; ') : '默认接口'),
             description: formData.description,
-            timeout: formData.timeout,
+            timeout: resolvedTimeout,
             srcIp: resolvedSrcIp,
             srcPort: resolvedSrcPort,
             dstIp: resolvedDstIp,
@@ -1564,14 +2031,14 @@ export default function RuleManagement() {
         id: newId,
         ruleId: randomRuleId,
         name: formData.name,
-        protocol_type: formData.protocolType,
+        protocol_type: activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
         l7Group: activeTab === 'L7应用' ? formData.l7Group : undefined,
         port: formData.probeMode === 'all' ? '所有接口' : (formData.selectedProbes.length > 0 ? formData.selectedProbes.join('; ') : '默认接口'),
         priority: 10 + filteredTableData.length,
         protocol: protocol,
         tab: activeTab,
         description: formData.description,
-        timeout: formData.timeout,
+        timeout: resolvedTimeout,
         srcIp: resolvedSrcIp,
         srcPort: resolvedSrcPort,
         dstIp: resolvedDstIp,
@@ -1655,12 +2122,16 @@ export default function RuleManagement() {
   };
 
   const handleClearAllRules = () => {
-    setAllRules(prev => prev.filter(r => r.protocol !== protocol || r.tab !== activeTab));
-    setSelectedRuleIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    const idsToClear = allRules
+      .filter((r) => r.protocol === protocol && r.tab === activeTab && ruleBoundToProbe(r.port || '', selectedProbe))
+      .map((r) => r.id);
+    setAllRules((prev) => prev.filter((r) => !idsToClear.includes(r.id)));
+    setSelectedRuleIds((prev) => prev.filter((id) => !idsToClear.includes(id)));
+    setShowClearAllConfirm(false);
   };
 
   const handleOpenL7GroupSettings = (group: string) => {
-    if (group === 'DNS') {
+    if (isDnsL7Group(group)) {
       setDnsConfigDraft(normalizeDnsConfig(l7ProtocolConfigs[protocol]));
       setShowDnsConfigModal(true);
       return;
@@ -1704,10 +2175,59 @@ export default function RuleManagement() {
     }
   };
 
+  const activeAdvancedRule = !isBatchAdvancedMode && activeAdvancedRuleId !== null
+    ? allRules.find((r) => r.id === activeAdvancedRuleId)
+    : null;
   const activeAdvancedTab = isBatchAdvancedMode
     ? activeTab
-    : (allRules.find((r) => r.id === activeAdvancedRuleId)?.tab || activeTab);
+    : (activeAdvancedRule?.tab || activeTab);
   const showCpuLogCoreInAdvanced = !isTcpUdpIpAdvancedTab(activeAdvancedTab);
+  const isIpAdvancedTabActive = activeAdvancedTab === 'IP应用';
+  const batchAdvancedRules = isBatchAdvancedMode
+    ? allRules.filter((r) => batchAdvancedRuleIds.includes(r.id))
+    : [];
+  const resolvedAdvancedProtocolType = isBatchAdvancedMode
+    ? ''
+    : (activeAdvancedProtocolType || activeAdvancedRule?.protocol_type || formData.protocolType || '');
+  const showIcmpEventRecordInAdvanced = isIpAdvancedTabActive && (
+    isBatchAdvancedMode
+      ? batchAdvancedRules.length > 0 && batchAdvancedRules.every((r) => isIcmpProtocolType(r.protocol_type || ''))
+      : isIcmpProtocolType(resolvedAdvancedProtocolType)
+  );
+  const advancedTimeoutPlaceholder = isIpAdvancedTabActive
+    ? '单位：秒 (默认300)'
+    : '单位：秒 (TCP默认300, UDP默认30)';
+  const advancedTimeoutHint = isIpAdvancedTabActive
+    ? '(默认300s)'
+    : formData.protocolType === 'TCP'
+      ? '(TCP协议默认300s)'
+      : formData.protocolType === 'UDP'
+        ? '(UDP协议默认30s)'
+        : '';
+  const timeoutFieldDisplay = getAdvancedFieldDisplay(formData.timeout, advancedTimeoutPlaceholder);
+  const performanceRapidFieldDisplay = getAdvancedFieldDisplay(formData.performanceRapid);
+  const performanceNormalFieldDisplay = getAdvancedFieldDisplay(formData.performanceNormal);
+  const cpuStatsCoreFieldDisplay = getAdvancedFieldDisplay(formData.p2CpuStatsCore, '请输入核心 ID (选填)');
+  const cpuLogCoreFieldDisplay = getAdvancedFieldDisplay(formData.p2CpuLogCore);
+  const giantFrameFieldDisplay = getAdvancedFieldDisplay(formData.p2GiantFrameThreshold);
+  const appSessionFieldDisplay = getAdvancedFieldDisplay(formData.p2AppSessionDetails, '100000');
+  const mixedFieldClass = 'placeholder:text-amber-500 placeholder:italic';
+  const showL7AdvancedFields = showCpuLogCoreInAdvanced;
+  const renderAdvancedOnOffSelect = (
+    field: 'p2IgnoreClientRstFail' | 'p2RecordAppKpi' | 'p2AppAdaptiveCaptureLength' | 'p2ReassemblyFailContinue' | 'p2Srv6Parsing' | 'p2ConnInterStateHandling',
+    value: string
+  ) => (
+    <select
+      disabled={isReadOnly}
+      value={value}
+      onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+      className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
+    >
+      {renderBatchMixedSelectOption(value)}
+      <option value="开启">开启</option>
+      <option value="关闭">关闭</option>
+    </select>
+  );
 
   const tableRenderRows: Array<
     | { kind: 'l7-header'; group: string }
@@ -1783,7 +2303,7 @@ export default function RuleManagement() {
               <span>下载模板</span>
             </button>
             <button 
-              onClick={handleClearAllRules}
+              onClick={() => setShowClearAllConfirm(true)}
               className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/60 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-500" />
@@ -2155,7 +2675,7 @@ export default function RuleManagement() {
                             </button>
                             <span>协议组：{row.group}</span>
                           </div>
-                          {['DNS', 'HTTP', 'MySQL', 'Oracle', 'PostgreSQL', 'SSL'].includes(row.group) && (
+                          {l7GroupsWithSettings(row.group) && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2581,17 +3101,17 @@ export default function RuleManagement() {
                         <div className="flex items-center gap-2">
                           <div className="flex-1 max-w-[320px] flex items-center border border-slate-200 rounded px-3 py-2 bg-white focus-within:border-sky-400 transition-all">
                             <input 
-                              type="number" 
+                              type={timeoutFieldDisplay.isMixed ? 'text' : 'number'}
                               disabled={isReadOnly}
-                              className="w-full outline-none text-slate-700 placeholder:text-slate-300 disabled:bg-slate-50 disabled:cursor-not-allowed text-[13px]" 
-                              placeholder="单位：秒 (TCP默认300, UDP默认30)" 
-                              value={formData.timeout}
+                              className={`w-full outline-none text-slate-700 placeholder:text-slate-300 disabled:bg-slate-50 disabled:cursor-not-allowed text-[13px] ${timeoutFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                              placeholder={timeoutFieldDisplay.displayPlaceholder}
+                              value={timeoutFieldDisplay.displayValue}
                               onChange={(e) => setFormData({...formData, timeout: e.target.value})}
                             />
                             <span className="text-slate-400 pl-2 ml-2 border-l border-slate-150 whitespace-nowrap text-[13px]">秒</span>
                           </div>
                           <div className="text-xs text-slate-400 whitespace-nowrap">
-                            {formData.protocolType === 'TCP' ? '(TCP协议默认300s)' : formData.protocolType === 'UDP' ? '(UDP协议默认30s)' : ''}
+                            {advancedTimeoutHint}
                           </div>
                         </div>
                       </div>
@@ -2612,8 +3132,9 @@ export default function RuleManagement() {
                             <input
                               type="text"
                               disabled={isReadOnly}
-                              className="w-14 py-1 outline-none text-center disabled:bg-slate-50"
-                              value={formData.performanceRapid}
+                              className={`w-14 py-1 outline-none text-center disabled:bg-slate-50 ${performanceRapidFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                              placeholder={performanceRapidFieldDisplay.displayPlaceholder}
+                              value={performanceRapidFieldDisplay.displayValue}
                               onChange={(e) => setFormData({ ...formData, performanceRapid: e.target.value })}
                             />
                             <span className="text-slate-400 px-1.5 border-l border-slate-100 ml-2">毫秒</span>
@@ -2625,8 +3146,9 @@ export default function RuleManagement() {
                             <input
                               type="text"
                               disabled={isReadOnly}
-                              className="w-14 py-1 outline-none text-center disabled:bg-slate-50"
-                              value={formData.performanceNormal}
+                              className={`w-14 py-1 outline-none text-center disabled:bg-slate-50 ${performanceNormalFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                              placeholder={performanceNormalFieldDisplay.displayPlaceholder}
+                              value={performanceNormalFieldDisplay.displayValue}
                               onChange={(e) => setFormData({ ...formData, performanceNormal: e.target.value })}
                             />
                             <span className="text-slate-400 px-1.5 border-l border-slate-100 ml-2">毫秒</span>
@@ -2637,80 +3159,101 @@ export default function RuleManagement() {
                       </div>
                     </div>
 
-                    {/* 第三块：底层参数调优 */}
+                    {showL7AdvancedFields && (
+                      <div className="bg-slate-50/50 p-5 rounded-lg border border-slate-100 space-y-5">
+                        <div className="font-semibold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+                          <span className="w-1.5 h-3 bg-violet-500 rounded-sm"></span>
+                          详单配置
+                        </div>
+                        <div className="grid grid-cols-[220px_1fr] items-center gap-y-5 text-[13px]">
+                          <label className="text-slate-600 text-right pr-5 font-medium">ClickHouse AppSession详单</label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type={appSessionFieldDisplay.isMixed ? 'text' : 'number'}
+                              min={1}
+                              max={5000000}
+                              disabled={isReadOnly}
+                              className={`w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50 ${appSessionFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                              placeholder={appSessionFieldDisplay.displayPlaceholder}
+                              value={appSessionFieldDisplay.displayValue}
+                              onChange={(e) => setFormData({ ...formData, p2AppSessionDetails: e.target.value })}
+                            />
+                            <span className="text-xs text-slate-400 whitespace-nowrap">支持范围 1-5000000，默认 100000</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 底层参数调优 */}
                     <div className="bg-slate-50/50 p-5 rounded-lg border border-slate-100 space-y-5">
                       <div className="font-semibold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
                         <span className="w-1.5 h-3 bg-sky-500 rounded-sm"></span>
                         底层参数调优
                       </div>
                       <div className="grid grid-cols-[220px_1fr] items-center gap-y-5 text-[13px]">
-                        {/* CPU分配(Statistics core ID) */}
                         <label className="text-slate-600 text-right pr-5 font-medium">CPU分配(Statistics core ID)</label>
                         <input 
                           type="text" 
                           disabled={isReadOnly}
-                          className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50"
-                          placeholder="请输入核心 ID (选填)"
-                          value={formData.p2CpuStatsCore}
+                          className={`w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50 ${cpuStatsCoreFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                          placeholder={cpuStatsCoreFieldDisplay.displayPlaceholder}
+                          value={cpuStatsCoreFieldDisplay.displayValue}
                           onChange={(e) => setFormData({...formData, p2CpuStatsCore: e.target.value})}
                         />
 
-                        {showCpuLogCoreInAdvanced && (
+                        {showL7AdvancedFields && (
                           <>
-                            {/* CPU分配(Log core ID) */}
                             <label className="text-slate-600 text-right pr-5 font-medium">CPU分配(Log core ID)</label>
                             <input 
                               type="text" 
                               disabled={isReadOnly}
-                              className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50"
-                              value={formData.p2CpuLogCore}
+                              className={`w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50 ${cpuLogCoreFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                              placeholder={cpuLogCoreFieldDisplay.displayPlaceholder}
+                              value={cpuLogCoreFieldDisplay.displayValue}
                               onChange={(e) => setFormData({...formData, p2CpuLogCore: e.target.value})}
                             />
                           </>
                         )}
 
-                        {/* 应用巨帧包长阈值 */}
                         <label className="text-slate-600 text-right pr-5 font-medium">应用巨帧包长阈值</label>
                         <div className="flex items-center gap-2">
                           <input 
-                            type="number" 
+                            type={giantFrameFieldDisplay.isMixed ? 'text' : 'number'}
                             disabled={isReadOnly}
-                            className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50"
-                            value={formData.p2GiantFrameThreshold}
+                            className={`w-72 border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-sky-400 bg-white placeholder:text-slate-300 disabled:bg-slate-50 ${giantFrameFieldDisplay.isMixed ? mixedFieldClass : ''}`}
+                            placeholder={giantFrameFieldDisplay.displayPlaceholder}
+                            value={giantFrameFieldDisplay.displayValue}
                             onChange={(e) => setFormData({...formData, p2GiantFrameThreshold: e.target.value})}
                           />
                           <Info 
-                            onMouseEnter={(e) => showTooltip("控制针对巨帧（Giant Packet）包长的过滤条件。通常当以太网二层网络MTU大于1500时配置该数值，可有效过滤巨型载荷帧。", e)}
+                            onMouseEnter={(e) => showTooltip('用于统计应用会话中，客户端方向与服务器方向超过巨帧包长阈值的报文数量。', e)}
                             onMouseLeave={hideTooltip}
                             className="w-3.5 h-3.5 text-slate-400 cursor-help"
                           />
                         </div>
 
-                        {/* SRv6解析 */}
+                        {showL7AdvancedFields && (
+                          <>
+                            <label className="text-slate-600 text-right pr-5 font-medium">忽略客户端RST建连失败</label>
+                            {renderAdvancedOnOffSelect('p2IgnoreClientRstFail', formData.p2IgnoreClientRstFail)}
+
+                            <label className="text-slate-600 text-right pr-5 font-medium">记录APP KPI</label>
+                            {renderAdvancedOnOffSelect('p2RecordAppKpi', formData.p2RecordAppKpi)}
+
+                            <label className="text-slate-600 text-right pr-5 font-medium">APP自适应存包长度</label>
+                            {renderAdvancedOnOffSelect('p2AppAdaptiveCaptureLength', formData.p2AppAdaptiveCaptureLength)}
+
+                            <label className="text-slate-600 text-right pr-5 font-medium">重组失败继续处理</label>
+                            {renderAdvancedOnOffSelect('p2ReassemblyFailContinue', formData.p2ReassemblyFailContinue)}
+                          </>
+                        )}
+
                         <label className="text-slate-600 text-right pr-5 font-medium">SRv6解析</label>
-                        <select
-                          disabled={isReadOnly}
-                          value={formData.p2Srv6Parsing}
-                          onChange={(e) => setFormData({ ...formData, p2Srv6Parsing: e.target.value })}
-                          className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="开启">开启</option>
-                          <option value="关闭">关闭</option>
-                        </select>
+                        {renderAdvancedOnOffSelect('p2Srv6Parsing', formData.p2Srv6Parsing)}
 
-                        {/* 连接中间状态处理 */}
                         <label className="text-slate-600 text-right pr-5 font-medium">连接中间状态处理</label>
-                        <select
-                          disabled={isReadOnly}
-                          value={formData.p2ConnInterStateHandling}
-                          onChange={(e) => setFormData({ ...formData, p2ConnInterStateHandling: e.target.value })}
-                          className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="开启">开启</option>
-                          <option value="关闭">关闭</option>
-                        </select>
+                        {renderAdvancedOnOffSelect('p2ConnInterStateHandling', formData.p2ConnInterStateHandling)}
 
-                        {/* 规则平衡 */}
                         <label className="text-slate-600 text-right pr-5 font-medium">规则平衡</label>
                         <select
                           disabled={isReadOnly}
@@ -2718,10 +3261,28 @@ export default function RuleManagement() {
                           onChange={(e) => setFormData({ ...formData, p2RuleBalancing: e.target.value })}
                           className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
                         >
+                          {renderBatchMixedSelectOption(formData.p2RuleBalancing)}
                           <option value="未配置">未配置</option>
                           <option value="开启">开启</option>
                           <option value="关闭">关闭</option>
                         </select>
+
+                        {showIcmpEventRecordInAdvanced && (
+                          <>
+                            <label className="text-slate-600 text-right pr-5 font-medium">ICMP事件记录</label>
+                            <select
+                              disabled={isReadOnly}
+                              value={formData.p2IcmpEventRecord}
+                              onChange={(e) => setFormData({ ...formData, p2IcmpEventRecord: e.target.value })}
+                              className="w-72 border border-slate-200 rounded px-3 py-2 text-[13px] bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                            >
+                              {renderBatchMixedSelectOption(formData.p2IcmpEventRecord)}
+                              {ICMP_EVENT_RECORD_OPTIONS.map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                            </select>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2741,15 +3302,24 @@ export default function RuleManagement() {
 
                     {activeTab === 'L7应用' && (
                       <>
-                        <label className="text-slate-600 text-right pr-4">L7协议组</label>
+                        <label className="text-slate-600 text-right pr-4">L7协议</label>
                         <select
                           disabled={isReadOnly}
                           className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed text-xs"
                           value={formData.l7Group}
-                          onChange={(e) => setFormData({ ...formData, l7Group: e.target.value })}
+                          onChange={(e) => {
+                            const l7Group = e.target.value;
+                            const transport = l7Group ? getTransportByL7Group(l7Group) : formData.protocolType;
+                            setFormData({
+                              ...formData,
+                              l7Group,
+                              protocolType: transport,
+                              timeout: l7Group === 'DNS(UDP)' ? '30' : (l7Group ? '300' : formData.timeout),
+                            });
+                          }}
                         >
-                          <option value="">请选择协议组</option>
-                          {l7GroupOptions.map((group) => (
+                          <option value="">请选择协议</option>
+                          {getL7GroupOptionsForForm(formData.l7Group).map((group) => (
                             <option key={group} value={group}>{group}</option>
                           ))}
                         </select>
@@ -3135,7 +3705,7 @@ export default function RuleManagement() {
                 </button>
               </div>
               <div className="px-5 py-4 text-sm text-slate-600">
-                删除当前应用「<span className="font-semibold text-slate-800">{pendingDeleteRule.name}</span>」后，相关功能（如应用拓扑、应用组等）中的应用将会被取消关联，确认删除？
+                删除当前应用后，相关功能（如应用拓扑、应用组等）中的应用将会被取消关联，确认删除？
               </div>
               <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
                 <button
@@ -3597,6 +4167,54 @@ export default function RuleManagement() {
         )}
       </AnimatePresence>
 
+      {/* Clear All Confirm Modal */}
+      <AnimatePresence>
+        {showClearAllConfirm && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowClearAllConfirm(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative w-full max-w-md bg-white border border-slate-200 rounded-lg shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">一键清空确认</h3>
+                <button
+                  onClick={() => setShowClearAllConfirm(false)}
+                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+              <div className="px-5 py-4 text-sm text-slate-600">
+                删除当前接口下所有应用后，相关功能（如应用拓扑、应用组等）中的应用将会被取消关联，确认删除？
+              </div>
+              <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowClearAllConfirm(false)}
+                  className="px-4 py-2 text-xs bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition-colors cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleClearAllRules}
+                  className="px-4 py-2 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors cursor-pointer"
+                >
+                  确认删除
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Enable Toggle Confirm Modal */}
       <AnimatePresence>
         {pendingEnableToggle && (
@@ -3624,9 +4242,8 @@ export default function RuleManagement() {
                 </button>
               </div>
               <div className="px-5 py-4 text-sm text-slate-600">
-                确认{pendingEnableToggle.nextEnabled ? '启用' : '停用'}应用「
-                <span className="font-semibold text-slate-800">{pendingEnableToggle.name}</span>
-                」吗？
+                是否{pendingEnableToggle.nextEnabled ? '启用' : '停用'}规则
+                <span className="font-semibold text-slate-800">{pendingEnableToggle.name}</span>？
               </div>
               <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
                 <button
