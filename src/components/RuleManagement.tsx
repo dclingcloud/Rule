@@ -281,6 +281,17 @@ function L7ConfigSaveButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+const CAPTURE_LENGTH_OPTIONS = ['全包', '未配置', '不存包', '54字节', '64字节', '128字节', '自定义'];
+const DEFAULT_CAPTURE_LENGTH = '64字节';
+
+const getCaptureLengthDisplay = (item: { storageLength?: string; customCaptureLength?: string }) => {
+  const selected = item.storageLength || '未配置';
+  if (selected === '自定义') {
+    return item.customCaptureLength ? `${item.customCaptureLength}字节` : '自定义';
+  }
+  return selected;
+};
+
 export default function RuleManagement() {
   const [protocol, setProtocol] = useState('IPV4应用');
   const [activeTab, setActiveTab] = useState('自定义应用(TCP)');
@@ -499,6 +510,7 @@ export default function RuleManagement() {
     { id: 'dstIp', name: '目的IP', visible: true },
     { id: 'srcPort', name: '源端口', visible: false },
     { id: 'dstPort', name: '目的端口', visible: true },
+    { id: 'captureLength', name: '裁包长度', visible: true },
   ]);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [colDragOverIndex, setColDragOverIndex] = useState<number | null>(null);
@@ -580,14 +592,14 @@ export default function RuleManagement() {
   // Full-featured Reactive Rules State
   const [allRules, setAllRules] = useState<any[]>([
     // IPV4 TCP
-    { id: 1, ruleId: '22894', name: 'IPv4-Custom-Web', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 1, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '基于TCP协议的Web服务数据流控规则', srcIp: '192.168.1.0/24', srcPort: 'any', dstIp: '10.0.0.5', dstPort: '80, 443' },
+    { id: 1, ruleId: '22894', name: 'IPv4-Custom-Web', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 1, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '基于TCP协议的Web服务数据流控规则', srcIp: '192.168.1.0/24', srcPort: 'any', dstIp: '10.0.0.5', dstPort: '80, 443', storageLength: '128字节' },
     { id: 2, ruleId: '22893', name: 'IPv4-Custom-DB-Sync', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 2, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '高优先级数据库复制链路数据分析', srcIp: '192.168.1.100', srcPort: 'any', dstIp: '10.50.60.2', dstPort: '3306' },
     { id: 3, ruleId: '22851', name: 'IPv4-Custom-SSH', protocol_type: 'TCP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 3, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '远程管理端口堡垒机安全流监控', srcIp: '10.22.4.0/22', srcPort: 'any', dstIp: '10.22.5.11', dstPort: '22' },
     // IPV4 UDP
     { id: 4, ruleId: '22892', name: 'IPv4-Custom-DNS', protocol_type: 'UDP', port: '探针(Retx):接口1; 探针(重传):接口1', priority: 4, protocol: 'IPV4应用', tab: '自定义应用(UDP)', description: '内网解析DNS低时延数据探针流', srcIp: 'any', srcPort: 'any', dstIp: '114.114.114.114', dstPort: '53' },
     { id: 5, ruleId: '22852', name: 'IPv4-Custom-Syslog', protocol_type: 'UDP', port: '探针(重传):接口1', priority: 5, protocol: 'IPV4应用', tab: '自定义应用(UDP)', description: '统一日志服务器中继队列流控', srcIp: '172.16.8.99', srcPort: 'any', dstIp: '172.16.8.1', dstPort: '514' },
     // IPV4 Known TCP
-    { id: 6, ruleId: '10001', name: 'IPv4-Known-HTTP', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPV4应用', tab: '已知应用(TCP)', description: '已知传统HTTP网页业务分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '80' },
+    { id: 6, ruleId: '10001', name: 'IPv4-Known-HTTP', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPV4应用', tab: '已知应用(TCP)', description: '已知传统HTTP网页业务分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '80', storageLength: '全包' },
     { id: 7, ruleId: '10002', name: 'IPv4-Known-FTP', protocol_type: 'TCP', port: '所有接口', priority: 2, protocol: 'IPV4应用', tab: '已知应用(TCP)', description: '已知传统FTP file transfer端口提取', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '21' },
     // IPV4 Known UDP
     { id: 8, ruleId: '10011', name: 'IPv4-Known-SNMP', protocol_type: 'UDP', port: '所有接口', priority: 1, protocol: 'IPV4应用', tab: '已知应用(UDP)', description: '已知标准SNMP网管轮询规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '161, 162' },
@@ -601,7 +613,7 @@ export default function RuleManagement() {
     { id: 43, ruleId: '40103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 6, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
     { id: 44, ruleId: '40104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 7, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
     // IPV4 L7 Layer
-    { id: 13, ruleId: '70001', name: 'IPv4-L7-WeChat', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'SSL', description: '深度解析微信通讯流指纹', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 13, ruleId: '70001', name: 'IPv4-L7-WeChat', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'SSL', description: '深度解析微信通讯流指纹', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any', storageLength: '自定义', customCaptureLength: '256' },
     { id: 14, ruleId: '70002', name: 'IPv4-L7-Amap', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'HTTP', description: '高德地图时空定位API数据分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
 
     // IPV6 TCP
@@ -883,7 +895,8 @@ export default function RuleManagement() {
     dstIpV6: '',
     performanceRapid: '50',
     performanceNormal: '500',
-    storageLength: '64字节',
+    storageLength: DEFAULT_CAPTURE_LENGTH,
+    customCaptureLength: '',
     timeout: '300',
     p2: '',
     p2GroupType: '客户端按站点分组',
@@ -1052,7 +1065,8 @@ export default function RuleManagement() {
       dstIpV6: '',
       performanceRapid: '50',
       performanceNormal: '500',
-      storageLength: '64字节',
+      storageLength: DEFAULT_CAPTURE_LENGTH,
+    customCaptureLength: '',
       timeout: '300',
       p2: '',
       p2GroupType: '客户端按站点分组',
@@ -1113,7 +1127,8 @@ export default function RuleManagement() {
       dstIpV6: item.dstIpV6 || '',
       performanceRapid: '50',
       performanceNormal: '500',
-      storageLength: item.storageLength || '64字节',
+      storageLength: item.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: item.customCaptureLength || '',
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       p2: item.p2 !== undefined ? String(item.p2) : '配置项p2默认属性',
       ...p2Vals
@@ -1155,7 +1170,8 @@ export default function RuleManagement() {
       dstIpV6: item.dstIpV6 || '',
       performanceRapid: item.performanceRapid !== undefined ? String(item.performanceRapid) : '50',
       performanceNormal: item.performanceNormal !== undefined ? String(item.performanceNormal) : '500',
-      storageLength: item.storageLength || '64字节',
+      storageLength: item.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: item.customCaptureLength || '',
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       p2: item.p2 !== undefined ? String(item.p2) : '配置项p2默认属性',
       ...p2Vals
@@ -1236,7 +1252,8 @@ export default function RuleManagement() {
       dstIpV6: item.dstIpV6 || '',
       performanceRapid: '50',
       performanceNormal: '500',
-      storageLength: item.storageLength || '64字节',
+      storageLength: item.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: item.customCaptureLength || '',
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       p2: item.p2 !== undefined ? String(item.p2) : '配置项p2默认属性',
       ...p2Vals
@@ -1275,7 +1292,8 @@ export default function RuleManagement() {
       timeout: item.timeout !== undefined ? String(item.timeout) : (item.protocol_type === 'UDP' ? '30' : '300'),
       performanceRapid: item.performanceRapid !== undefined ? String(item.performanceRapid) : '50',
       performanceNormal: item.performanceNormal !== undefined ? String(item.performanceNormal) : '500',
-      storageLength: item.storageLength || '64字节',
+      storageLength: item.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: item.customCaptureLength || '',
       ...p2Vals
     };
     const existing = (item.interfaceAdvancedConfigs && typeof item.interfaceAdvancedConfigs === 'object')
@@ -1336,7 +1354,8 @@ export default function RuleManagement() {
       timeout: firstRule.timeout !== undefined ? String(firstRule.timeout) : (firstRule.protocol_type === 'UDP' ? '30' : '300'),
       performanceRapid: firstRule.performanceRapid !== undefined ? String(firstRule.performanceRapid) : '50',
       performanceNormal: firstRule.performanceNormal !== undefined ? String(firstRule.performanceNormal) : '500',
-      storageLength: firstRule.storageLength || '64字节',
+      storageLength: firstRule.storageLength || DEFAULT_CAPTURE_LENGTH,
+      customCaptureLength: firstRule.customCaptureLength || '',
       ...p2Vals
     }));
     setShowAddModal(true);
@@ -1546,6 +1565,11 @@ export default function RuleManagement() {
       ? 'any'
       : (serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort);
 
+    if (formData.storageLength === '自定义' && !formData.customCaptureLength.trim()) {
+      setValidationError('请选择「自定义」裁包长度并填写字节数。');
+      return;
+    }
+
     if (protocol === '混栈应用') {
       const ipText = `${resolvedSrcIp} ${resolvedDstIp}`;
       const hasV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(ipText);
@@ -1581,6 +1605,7 @@ export default function RuleManagement() {
             dstIpV4: formData.dstIpV4,
             dstIpV6: formData.dstIpV6,
             storageLength: formData.storageLength,
+            customCaptureLength: formData.storageLength === '自定义' ? formData.customCaptureLength.trim() : '',
             p2: p2Serialized
           };
         }
@@ -1610,6 +1635,7 @@ export default function RuleManagement() {
         dstIpV4: formData.dstIpV4,
         dstIpV6: formData.dstIpV6,
         storageLength: formData.storageLength,
+        customCaptureLength: formData.storageLength === '自定义' ? formData.customCaptureLength.trim() : '',
         p2: p2Serialized
       };
       setAllRules(prev => [...prev, newRule]);
@@ -2010,7 +2036,7 @@ export default function RuleManagement() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left text-[13px]" style={{ minWidth: '985px' }}>
+          <table className="w-full table-fixed text-left text-[13px]" style={{ minWidth: '1085px' }}>
             <thead className="bg-[#f8fafc] text-slate-500 border-b border-slate-200/60">
               <tr>
                 <th className="px-4 py-2.5 w-[45px] min-w-[45px] max-w-[45px] text-center">
@@ -2054,6 +2080,9 @@ export default function RuleManagement() {
                   }
                   if (col.id === 'srcPort') {
                     return <th key={col.id} className="px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[110px] min-w-[110px] max-w-[110px]">源端口</th>;
+                  }
+                  if (col.id === 'captureLength') {
+                    return <th key={col.id} className="px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[100px] min-w-[100px] max-w-[100px]">裁包长度</th>;
                   }
                   return null;
                 })}
@@ -2124,6 +2153,9 @@ export default function RuleManagement() {
                           />
                         </th>
                       );
+                    }
+                    if (col.id === 'captureLength') {
+                      return <th key="f-captureLength" className="px-4 py-2 w-[100px] min-w-[100px] max-w-[100px]" />;
                     }
                     return null;
                   })}
@@ -2429,6 +2461,20 @@ export default function RuleManagement() {
                             onMouseEnter={(e) => showTooltip(val, e)}
                             onMouseLeave={hideTooltip}
                             className="max-w-[92px] truncate mx-auto cursor-help"
+                          >
+                            {val}
+                          </div>
+                        </td>
+                      );
+                    }
+                    if (col.id === 'captureLength') {
+                      const val = getCaptureLengthDisplay(item);
+                      return (
+                        <td key={col.id} className="px-4 py-2.5 text-slate-500 whitespace-nowrap text-center text-xs text-slate-700 w-[100px] min-w-[100px] max-w-[100px]">
+                          <div
+                            onMouseEnter={(e) => showTooltip(val, e)}
+                            onMouseLeave={hideTooltip}
+                            className="max-w-[88px] truncate mx-auto cursor-help"
                           >
                             {val}
                           </div>
@@ -2970,17 +3016,33 @@ export default function RuleManagement() {
                       ))}
                     </div>
 
-                    <label className="text-slate-600 text-right pr-4">存包长度</label>
-                    <select
-                      disabled={isReadOnly}
-                      className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed text-xs"
-                      value={formData.storageLength}
-                      onChange={(e) => setFormData({ ...formData, storageLength: e.target.value })}
-                    >
-                      <option>64字节</option>
-                      <option>128字节</option>
-                      <option>全包</option>
-                    </select>
+                    <label className="text-slate-600 text-right pr-4 self-start pt-1.5">裁包长度</label>
+                    <div className="space-y-2">
+                      <select
+                        disabled={isReadOnly}
+                        className="w-full border border-slate-200 rounded px-3 py-1.5 bg-white outline-none focus:border-sky-400 disabled:bg-slate-50 disabled:cursor-not-allowed text-xs"
+                        value={CAPTURE_LENGTH_OPTIONS.includes(formData.storageLength) ? formData.storageLength : DEFAULT_CAPTURE_LENGTH}
+                        onChange={(e) => setFormData({ ...formData, storageLength: e.target.value, customCaptureLength: e.target.value === '自定义' ? formData.customCaptureLength : '' })}
+                      >
+                        {CAPTURE_LENGTH_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                      {formData.storageLength === '自定义' && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            disabled={isReadOnly}
+                            className="flex-1 border border-slate-200 rounded px-3 py-1.5 text-xs outline-none focus:border-sky-400 disabled:bg-slate-50"
+                            placeholder="请输入字节数"
+                            value={formData.customCaptureLength}
+                            onChange={(e) => setFormData({ ...formData, customCaptureLength: e.target.value })}
+                          />
+                          <span className="text-xs text-slate-500 shrink-0">字节</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 )}
