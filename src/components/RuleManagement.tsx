@@ -234,41 +234,6 @@ function L7ConfigSection({ title, children }: { title: string; children: React.R
   );
 }
 
-function L7DataSourceRow({
-  clickhouse,
-  mongodb,
-  onChange,
-}: {
-  clickhouse: boolean;
-  mongodb: boolean;
-  onChange: (next: { clickhouse: boolean; mongodb: boolean }) => void;
-}) {
-  return (
-    <L7ConfigFormRow label="数据源调度">
-      <div className="flex flex-wrap items-center gap-8">
-        <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={clickhouse}
-            onChange={(e) => onChange({ clickhouse: e.target.checked, mongodb })}
-            className="rounded border-slate-300 text-sky-500 focus:ring-sky-500 w-4 h-4"
-          />
-          ClickHouse
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={mongodb}
-            onChange={(e) => onChange({ clickhouse, mongodb: e.target.checked })}
-            className="rounded border-slate-300 text-sky-500 focus:ring-sky-500 w-4 h-4"
-          />
-          MongoDB
-        </label>
-      </div>
-    </L7ConfigFormRow>
-  );
-}
-
 function L7ConfigSaveButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -322,14 +287,10 @@ export default function RuleManagement() {
 
   type DnsConfig = {
     dnsResolution: 'enabled' | 'disabled';
-    clickhouse: boolean;
-    mongodb: boolean;
   };
 
   const defaultDnsConfig: DnsConfig = {
     dnsResolution: 'enabled',
-    clickhouse: true,
-    mongodb: false,
   };
 
   const [showDnsConfigModal, setShowDnsConfigModal] = useState(false);
@@ -343,37 +304,21 @@ export default function RuleManagement() {
   type EnabledFlag = 'enabled' | 'disabled';
 
   type HttpConfig = {
-    fileSplitCycleHours: string;
-    fileValidityHours: string;
     httpParsing: EnabledFlag;
     truncatedPacketAnalysis: EnabledFlag;
     parseFirstHttpOnly: EnabledFlag;
     onlyRuleMatchUrl: EnabledFlag;
     httpRequestHeaderDisplay: EnabledFlag;
     sessionRateLimit: string;
-    clickhouse: boolean;
-    mongodb: boolean;
-    fileRestore: EnabledFlag;
-    fileSizeMin: string;
-    fileSizeMax: string;
-    fileRestoreMode: string;
   };
 
   const defaultHttpConfig: HttpConfig = {
-    fileSplitCycleHours: '24',
-    fileValidityHours: '168',
     httpParsing: 'enabled',
     truncatedPacketAnalysis: 'disabled',
     parseFirstHttpOnly: 'disabled',
     onlyRuleMatchUrl: 'disabled',
     httpRequestHeaderDisplay: 'enabled',
-    sessionRateLimit: '-1',
-    clickhouse: true,
-    mongodb: false,
-    fileRestore: 'disabled',
-    fileSizeMin: '',
-    fileSizeMax: '',
-    fileRestoreMode: '全部',
+    sessionRateLimit: '100',
   };
 
   const [showHttpConfigModal, setShowHttpConfigModal] = useState(false);
@@ -384,10 +329,7 @@ export default function RuleManagement() {
     混栈应用: { ...defaultHttpConfig },
   });
 
-  type DbEnabledConfig<T extends string> = Record<T, EnabledFlag> & {
-    clickhouse: boolean;
-    mongodb: boolean;
-  };
+  type DbEnabledConfig<T extends string> = Record<T, EnabledFlag>;
 
   type MysqlConfigKeys =
     | 'mysqlParsing'
@@ -408,8 +350,6 @@ export default function RuleManagement() {
     recordExecute: 'enabled',
     recordPrepare: 'disabled',
     recordOtherSql: 'disabled',
-    clickhouse: true,
-    mongodb: false,
   };
 
   const [showMysqlConfigModal, setShowMysqlConfigModal] = useState(false);
@@ -429,8 +369,6 @@ export default function RuleManagement() {
     recordDelete: 'enabled',
     recordInsert: 'enabled',
     recordOtherSql: 'disabled',
-    clickhouse: true,
-    mongodb: false,
   };
 
   const [showOracleConfigModal, setShowOracleConfigModal] = useState(false);
@@ -445,8 +383,6 @@ export default function RuleManagement() {
 
   const defaultPgConfig: DbEnabledConfig<PgConfigKeys> = {
     pgParsing: 'enabled',
-    clickhouse: true,
-    mongodb: false,
   };
 
   const [showPgConfigModal, setShowPgConfigModal] = useState(false);
@@ -457,13 +393,11 @@ export default function RuleManagement() {
     混栈应用: { ...defaultPgConfig },
   });
 
-  type SslDetailRecord = '全记录' | '只记录SNI' | '只记录证书';
+  type SslDetailRecord = '全记录' | '只记录错误返回码';
 
   type SslConfig = {
     sslParsing: EnabledFlag;
     keywordDomainStats: EnabledFlag;
-    clickhouse: boolean;
-    mongodb: boolean;
     detailRecord: SslDetailRecord;
   };
 
@@ -477,10 +411,22 @@ export default function RuleManagement() {
   const defaultSslConfig: SslConfig = {
     sslParsing: 'enabled',
     keywordDomainStats: 'enabled',
-    clickhouse: true,
-    mongodb: false,
     detailRecord: '全记录',
   };
+
+  const normalizeSslDetailRecord = (value: unknown): SslDetailRecord =>
+    value === '只记录错误返回码' ? '只记录错误返回码' : '全记录';
+
+  const normalizeHttpConfig = (cfg: Partial<HttpConfig> | undefined): HttpConfig => ({
+    ...defaultHttpConfig,
+    ...cfg,
+    sessionRateLimit: cfg?.sessionRateLimit ?? defaultHttpConfig.sessionRateLimit,
+  });
+
+  const normalizeDnsConfig = (cfg: Partial<DnsConfig> | undefined): DnsConfig => ({
+    ...defaultDnsConfig,
+    ...cfg,
+  });
 
   const defaultSslDomainModels: SslDomainModel[] = [
     { id: 'ssl-domain-model-all1', name: 'all1', pattern: '.*', isRegex: true },
@@ -1715,32 +1661,30 @@ export default function RuleManagement() {
 
   const handleOpenL7GroupSettings = (group: string) => {
     if (group === 'DNS') {
-      const cfg = l7ProtocolConfigs[protocol] || defaultDnsConfig;
-      setDnsConfigDraft({ ...cfg });
+      setDnsConfigDraft(normalizeDnsConfig(l7ProtocolConfigs[protocol]));
       setShowDnsConfigModal(true);
       return;
     }
     if (group === 'HTTP') {
-      const cfg = l7HttpConfigs[protocol] || defaultHttpConfig;
-      setHttpConfigDraft({ ...cfg });
+      setHttpConfigDraft(normalizeHttpConfig(l7HttpConfigs[protocol]));
       setShowHttpConfigModal(true);
       return;
     }
     if (group === 'MySQL') {
       const cfg = l7MysqlConfigs[protocol] || defaultMysqlConfig;
-      setMysqlConfigDraft({ ...cfg });
+      setMysqlConfigDraft({ ...defaultMysqlConfig, ...cfg });
       setShowMysqlConfigModal(true);
       return;
     }
     if (group === 'Oracle') {
       const cfg = l7OracleConfigs[protocol] || defaultOracleConfig;
-      setOracleConfigDraft({ ...cfg });
+      setOracleConfigDraft({ ...defaultOracleConfig, ...cfg });
       setShowOracleConfigModal(true);
       return;
     }
     if (group === 'PostgreSQL') {
       const cfg = l7PgConfigs[protocol] || defaultPgConfig;
-      setPgConfigDraft({ ...cfg });
+      setPgConfigDraft({ ...defaultPgConfig, ...cfg });
       setShowPgConfigModal(true);
       return;
     }
@@ -1749,7 +1693,11 @@ export default function RuleManagement() {
         config: { ...defaultSslConfig },
         domainModels: [...defaultSslDomainModels],
       };
-      setSslConfigDraft({ ...cfg.config });
+      setSslConfigDraft({
+        ...defaultSslConfig,
+        ...cfg.config,
+        detailRecord: normalizeSslDetailRecord(cfg.config?.detailRecord),
+      });
       setSslDomainModelsDraft(cfg.domainModels.map((m) => ({ ...m })));
       setSslNewDomainModel({ name: '', pattern: '', isRegex: false });
       setShowSslConfigModal(true);
@@ -3236,24 +3184,17 @@ export default function RuleManagement() {
                 </button>
               </div>
               <div className={L7_MODAL_BODY}>
-                <L7ConfigSection title="基本设置">
-                  <L7ConfigFormRow label="DNS解析">
-                    <L7EnabledSelect
-                      value={dnsConfigDraft.dnsResolution}
-                      onChange={(v) => setDnsConfigDraft((prev) => ({ ...prev, dnsResolution: v }))}
-                    />
-                  </L7ConfigFormRow>
-                  <L7DataSourceRow
-                    clickhouse={dnsConfigDraft.clickhouse}
-                    mongodb={dnsConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setDnsConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
+                <L7ConfigFormRow label="DNS解析">
+                  <L7EnabledSelect
+                    value={dnsConfigDraft.dnsResolution}
+                    onChange={(v) => setDnsConfigDraft((prev) => ({ ...prev, dnsResolution: v }))}
                   />
-                </L7ConfigSection>
+                </L7ConfigFormRow>
               </div>
               <div className={L7_MODAL_FOOTER}>
                 <L7ConfigSaveButton
                   onClick={() => {
-                    setL7ProtocolConfigs((prev) => ({ ...prev, [protocol]: { ...dnsConfigDraft } }));
+                    setL7ProtocolConfigs((prev) => ({ ...prev, [protocol]: normalizeDnsConfig(dnsConfigDraft) }));
                     setShowDnsConfigModal(false);
                   }}
                 />
@@ -3291,31 +3232,6 @@ export default function RuleManagement() {
                 </button>
               </div>
               <div className={L7_MODAL_BODY}>
-                <L7ConfigSection title="全局配置">
-                  <L7ConfigFormRow label="文件目录拆分周期长度">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="text"
-                        value={httpConfigDraft.fileSplitCycleHours}
-                        onChange={(e) => setHttpConfigDraft((prev) => ({ ...prev, fileSplitCycleHours: e.target.value }))}
-                        className={L7_CONFIG_INPUT_SM}
-                      />
-                      <span className="text-slate-500 text-sm">(小时)</span>
-                    </div>
-                  </L7ConfigFormRow>
-                  <L7ConfigFormRow label="文件有效时长限制">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="text"
-                        value={httpConfigDraft.fileValidityHours}
-                        onChange={(e) => setHttpConfigDraft((prev) => ({ ...prev, fileValidityHours: e.target.value }))}
-                        className={L7_CONFIG_INPUT_SM}
-                      />
-                      <span className="text-slate-500 text-sm">(小时)</span>
-                    </div>
-                  </L7ConfigFormRow>
-                </L7ConfigSection>
-
                 <L7ConfigSection title="基本设置">
                   {[
                     { key: 'httpParsing' as const, label: 'HTTP解析' },
@@ -3339,54 +3255,12 @@ export default function RuleManagement() {
                       className={L7_CONFIG_INPUT_SM}
                     />
                   </L7ConfigFormRow>
-                  <L7DataSourceRow
-                    clickhouse={httpConfigDraft.clickhouse}
-                    mongodb={httpConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setHttpConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
-                  />
-                </L7ConfigSection>
-
-                <L7ConfigSection title="还原配置">
-                  <L7ConfigFormRow label="文件还原">
-                    <L7EnabledSelect
-                      value={httpConfigDraft.fileRestore}
-                      onChange={(v) => setHttpConfigDraft((prev) => ({ ...prev, fileRestore: v }))}
-                    />
-                  </L7ConfigFormRow>
-                  <L7ConfigFormRow label="文件大小限制(MB)">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <input
-                        type="text"
-                        value={httpConfigDraft.fileSizeMin}
-                        onChange={(e) => setHttpConfigDraft((prev) => ({ ...prev, fileSizeMin: e.target.value }))}
-                        className={L7_CONFIG_INPUT_SM}
-                      />
-                      <span className="text-slate-500 text-sm">&lt;= 文件大小 &lt;</span>
-                      <input
-                        type="text"
-                        value={httpConfigDraft.fileSizeMax}
-                        onChange={(e) => setHttpConfigDraft((prev) => ({ ...prev, fileSizeMax: e.target.value }))}
-                        className={L7_CONFIG_INPUT_SM}
-                      />
-                    </div>
-                  </L7ConfigFormRow>
-                  <L7ConfigFormRow label="文件还原模式">
-                    <SearchableSelect
-                      value={httpConfigDraft.fileRestoreMode}
-                      onChange={(v) => setHttpConfigDraft((prev) => ({ ...prev, fileRestoreMode: v }))}
-                      options={[
-                        { value: '全部', label: '全部' },
-                        { value: '仅请求', label: '仅请求' },
-                        { value: '仅响应', label: '仅响应' },
-                      ]}
-                    />
-                  </L7ConfigFormRow>
                 </L7ConfigSection>
               </div>
               <div className={L7_MODAL_FOOTER}>
                 <L7ConfigSaveButton
                   onClick={() => {
-                    setL7HttpConfigs((prev) => ({ ...prev, [protocol]: { ...httpConfigDraft } }));
+                    setL7HttpConfigs((prev) => ({ ...prev, [protocol]: normalizeHttpConfig(httpConfigDraft) }));
                     setShowHttpConfigModal(false);
                   }}
                 />
@@ -3438,11 +3312,6 @@ export default function RuleManagement() {
                       />
                     </L7ConfigFormRow>
                   ))}
-                  <L7DataSourceRow
-                    clickhouse={mysqlConfigDraft.clickhouse}
-                    mongodb={mysqlConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setMysqlConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
-                  />
                 </L7ConfigSection>
               </div>
               <div className={L7_MODAL_FOOTER}>
@@ -3498,11 +3367,6 @@ export default function RuleManagement() {
                       />
                     </L7ConfigFormRow>
                   ))}
-                  <L7DataSourceRow
-                    clickhouse={oracleConfigDraft.clickhouse}
-                    mongodb={oracleConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setOracleConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
-                  />
                 </L7ConfigSection>
               </div>
               <div className={L7_MODAL_FOOTER}>
@@ -3549,11 +3413,6 @@ export default function RuleManagement() {
                       onChange={(v) => setPgConfigDraft((prev) => ({ ...prev, pgParsing: v }))}
                     />
                   </L7ConfigFormRow>
-                  <L7DataSourceRow
-                    clickhouse={pgConfigDraft.clickhouse}
-                    mongodb={pgConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setPgConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
-                  />
                 </L7ConfigSection>
               </div>
               <div className={L7_MODAL_FOOTER}>
@@ -3606,19 +3465,13 @@ export default function RuleManagement() {
                       />
                     </L7ConfigFormRow>
                   ))}
-                  <L7DataSourceRow
-                    clickhouse={sslConfigDraft.clickhouse}
-                    mongodb={sslConfigDraft.mongodb}
-                    onChange={({ clickhouse, mongodb }) => setSslConfigDraft((prev) => ({ ...prev, clickhouse, mongodb }))}
-                  />
                   <L7ConfigFormRow label="详单记录">
                     <SearchableSelect
                       value={sslConfigDraft.detailRecord}
                       onChange={(v) => setSslConfigDraft((prev) => ({ ...prev, detailRecord: v as SslDetailRecord }))}
                       options={[
                         { value: '全记录', label: '全记录' },
-                        { value: '只记录SNI', label: '只记录SNI' },
-                        { value: '只记录证书', label: '只记录证书' },
+                        { value: '只记录错误返回码', label: '只记录错误返回码' },
                       ]}
                     />
                   </L7ConfigFormRow>
@@ -3720,7 +3573,7 @@ export default function RuleManagement() {
                   </div>
 
                   <div className="text-sm text-slate-500 pt-4">
-                    说明：定义完成域名模型后，可以在L7分析下的&quot;SSL Pattern&quot;查看数据。
+                    说明：定义完成域名模型后，可在SSL分析下的关键域名分析查看数据。
                   </div>
                 </div>
               </div>
