@@ -156,6 +156,14 @@ const PROBE_SOURCE_OPTIONS = [
   { value: '离线任务', label: '离线任务' },
 ];
 
+const INTERFACE_OPTIONS = [
+  { value: 'Shanghai DC/Interface 1', label: 'Shanghai DC/Interface 1' },
+  { value: '所有接口', label: '所有接口' },
+  { value: '探针(Retx):接口1', label: '探针(Retx):接口1' },
+  { value: '探针(SRV6):接口1', label: '探针(SRV6):接口1' },
+  { value: '探针(重传):接口1', label: '探针(重传):接口1' },
+];
+
 const ENABLED_OPTIONS = [
   { value: 'enabled', label: '启用' },
   { value: 'disabled', label: '不启用' },
@@ -615,11 +623,13 @@ const getCaptureLengthDisplay = (item: { storageLength?: string; customCaptureLe
 };
 
 export default function RuleManagement() {
-  const [protocol, setProtocol] = useState('IPV4应用');
-  const [activeTab, setActiveTab] = useState('自定义应用(TCP)');
+  const [protocol, setProtocol] = useState('IPv4应用');
+  const [activeTab, setActiveTab] = useState('自定义TCP');
   const L7_GROUP_PAGE_SIZE = 15;
   const [probeSourceType, setProbeSourceType] = useState('实时探针接口');
   const [selectedProbe, setSelectedProbe] = useState('探针(Retx):接口1');
+  const [selectedInterface, setSelectedInterface] = useState('Shanghai DC/Interface 1');
+  const [showBatchMenu, setShowBatchMenu] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [activeMappingRule, setActiveMappingRule] = useState<any>(null);
@@ -642,6 +652,20 @@ export default function RuleManagement() {
   const [importedFile, setImportedFile] = useState<{ name: string; size: number } | null>(null);
   const [isImportProbeDropdownOpen, setIsImportProbeDropdownOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  // 预导入分析报告
+  const [importReport, setImportReport] = useState<{
+    total: number;
+    success: number;
+    failed: number;
+    rows: { name: string; result: '成功' | '失败'; detail: string }[];
+  } | null>(null);
+  const [showImportReportModal, setShowImportReportModal] = useState(false);
+  const [importLimitError, setImportLimitError] = useState<string | null>(null);
+  const IMPORT_LIMIT = 8000;
+  // 导出弹窗
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFileName, setExportFileName] = useState('');
+  const [exportRowCount, setExportRowCount] = useState(0);
 
   type DnsConfig = {
     dnsResolution: 'enabled' | 'disabled';
@@ -654,9 +678,9 @@ export default function RuleManagement() {
   const [showDnsConfigModal, setShowDnsConfigModal] = useState(false);
   const [dnsConfigDraft, setDnsConfigDraft] = useState<DnsConfig>(defaultDnsConfig);
   const [l7ProtocolConfigs, setL7ProtocolConfigs] = useState<Record<string, DnsConfig>>({
-    IPV4应用: { ...defaultDnsConfig },
-    IPV6应用: { ...defaultDnsConfig },
-    混栈应用: { ...defaultDnsConfig },
+    IPv4应用: { ...defaultDnsConfig },
+    IPv6应用: { ...defaultDnsConfig },
+    混线应用: { ...defaultDnsConfig },
   });
 
   type EnabledFlag = 'enabled' | 'disabled';
@@ -682,9 +706,9 @@ export default function RuleManagement() {
   const [showHttpConfigModal, setShowHttpConfigModal] = useState(false);
   const [httpConfigDraft, setHttpConfigDraft] = useState<HttpConfig>(defaultHttpConfig);
   const [l7HttpConfigs, setL7HttpConfigs] = useState<Record<string, HttpConfig>>({
-    IPV4应用: { ...defaultHttpConfig },
-    IPV6应用: { ...defaultHttpConfig },
-    混栈应用: { ...defaultHttpConfig },
+    IPv4应用: { ...defaultHttpConfig },
+    IPv6应用: { ...defaultHttpConfig },
+    混线应用: { ...defaultHttpConfig },
   });
 
   type DbEnabledConfig<T extends string> = Record<T, EnabledFlag>;
@@ -713,9 +737,9 @@ export default function RuleManagement() {
   const [showMysqlConfigModal, setShowMysqlConfigModal] = useState(false);
   const [mysqlConfigDraft, setMysqlConfigDraft] = useState<DbEnabledConfig<MysqlConfigKeys>>(defaultMysqlConfig);
   const [l7MysqlConfigs, setL7MysqlConfigs] = useState<Record<string, DbEnabledConfig<MysqlConfigKeys>>>({
-    IPV4应用: { ...defaultMysqlConfig },
-    IPV6应用: { ...defaultMysqlConfig },
-    混栈应用: { ...defaultMysqlConfig },
+    IPv4应用: { ...defaultMysqlConfig },
+    IPv6应用: { ...defaultMysqlConfig },
+    混线应用: { ...defaultMysqlConfig },
   });
 
   type OracleConfigKeys = 'oracleParsing' | 'recordSelect' | 'recordUpdate' | 'recordDelete' | 'recordInsert' | 'recordOtherSql';
@@ -732,9 +756,9 @@ export default function RuleManagement() {
   const [showOracleConfigModal, setShowOracleConfigModal] = useState(false);
   const [oracleConfigDraft, setOracleConfigDraft] = useState<DbEnabledConfig<OracleConfigKeys>>(defaultOracleConfig);
   const [l7OracleConfigs, setL7OracleConfigs] = useState<Record<string, DbEnabledConfig<OracleConfigKeys>>>({
-    IPV4应用: { ...defaultOracleConfig },
-    IPV6应用: { ...defaultOracleConfig },
-    混栈应用: { ...defaultOracleConfig },
+    IPv4应用: { ...defaultOracleConfig },
+    IPv6应用: { ...defaultOracleConfig },
+    混线应用: { ...defaultOracleConfig },
   });
 
   type PgConfigKeys = 'pgParsing';
@@ -746,9 +770,9 @@ export default function RuleManagement() {
   const [showPgConfigModal, setShowPgConfigModal] = useState(false);
   const [pgConfigDraft, setPgConfigDraft] = useState<DbEnabledConfig<PgConfigKeys>>(defaultPgConfig);
   const [l7PgConfigs, setL7PgConfigs] = useState<Record<string, DbEnabledConfig<PgConfigKeys>>>({
-    IPV4应用: { ...defaultPgConfig },
-    IPV6应用: { ...defaultPgConfig },
-    混栈应用: { ...defaultPgConfig },
+    IPv4应用: { ...defaultPgConfig },
+    IPv6应用: { ...defaultPgConfig },
+    混线应用: { ...defaultPgConfig },
   });
 
   type SslDetailRecord = '全记录' | '只记录错误返回码';
@@ -799,9 +823,9 @@ export default function RuleManagement() {
     isRegex: false,
   });
   const [l7SslConfigs, setL7SslConfigs] = useState<Record<string, { config: SslConfig; domainModels: SslDomainModel[] }>>({
-    IPV4应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
-    IPV6应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
-    混栈应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
+    IPv4应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
+    IPv6应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
+    混线应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
   });
 
 
@@ -814,13 +838,13 @@ export default function RuleManagement() {
     { id: 'dstIp', name: '目的IP', visible: true },
     { id: 'srcPort', name: '源端口', visible: false },
     { id: 'dstPort', name: '目的端口', visible: true },
-    { id: 'captureLength', name: '裁包长度', visible: true },
+    { id: 'captureLength', name: '载包长度', visible: true },
   ]);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [colDragOverIndex, setColDragOverIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (activeTab === 'IP应用') {
+    if (activeTab === 'IP协议') {
       setColumns((prev) =>
         prev.map((col) => {
           if (col.id === 'srcIp' || col.id === 'dstIp') return { ...col, visible: true };
@@ -857,15 +881,15 @@ export default function RuleManagement() {
 
   // Dynamic Tabs definition per prompt instructions
   const getTabs = (p: string) => {
-    if (p === '混栈应用') {
+    if (p === '混线应用') {
       // Dual-stack doesn't require "Known Applications", it has Custom (TCP/UDP) and L7 Apps. Let's support IP App as well in case they define it
-      return ['自定义应用(TCP)', '自定义应用(UDP)', 'IP应用', 'L7应用'];
+      return ['自定义TCP', '自定义UDP', 'IP协议', 'L7'];
     }
-    return ['自定义应用(TCP)', '自定义应用(UDP)', '已知应用(TCP)', '已知应用(UDP)', 'IP应用', 'L7应用'];
+    return ['自定义TCP', '自定义UDP', '已知TCP', '已知UDP', 'IP协议', 'L7'];
   };
 
   const tabs = getTabs(protocol);
-  const isKnownApp = activeTab.includes('已知应用');
+  const isKnownApp = activeTab.startsWith('已知');
   const l7GroupOptions = ['DNS(TCP)', 'DNS(UDP)', 'HTTP', 'SSL', 'Oracle', 'MySQL', 'PostgreSQL'];
   const isDnsL7Group = (group: string) => group === 'DNS(TCP)' || group === 'DNS(UDP)' || group === 'DNS';
   const getTransportByL7Group = (group: string) => {
@@ -888,7 +912,7 @@ export default function RuleManagement() {
   const getDefaultProtocolTypeByTab = (tab: string) => {
     if (tab.includes('TCP')) return 'TCP';
     if (tab.includes('UDP')) return 'UDP';
-    if (tab.includes('IP应用')) return 'ICMP';
+    if (tab.includes('IP协议')) return 'ICMP';
     return 'TCP';
   };
 
@@ -912,73 +936,86 @@ export default function RuleManagement() {
   // Full-featured Reactive Rules State
   const [allRules, setAllRules] = useState<any[]>([
     // IPV4 TCP
-    { id: 1, ruleId: '22894', name: 'IPv4-Custom-Web', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 1, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '基于TCP协议的Web服务数据流控规则', srcIp: '192.168.1.0/24', srcPort: 'any', dstIp: '10.0.0.5', dstPort: '80, 443', storageLength: '128字节' },
-    { id: 2, ruleId: '22893', name: 'IPv4-Custom-DB-Sync', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 2, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '高优先级数据库复制链路数据分析', srcIp: '192.168.1.100', srcPort: 'any', dstIp: '10.50.60.2', dstPort: '3306' },
-    { id: 3, ruleId: '22851', name: 'IPv4-Custom-SSH', protocol_type: 'TCP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 3, protocol: 'IPV4应用', tab: '自定义应用(TCP)', description: '远程管理端口堡垒机安全流监控', srcIp: '10.22.4.0/22', srcPort: 'any', dstIp: '10.22.5.11', dstPort: '22' },
+    { id: 1, ruleId: '37072', name: 'ACL_Test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 1, protocol: 'IPv4应用', tab: '自定义TCP', description: 'ACL测试应用', srcIp: 'any', srcPort: 'any', dstIp: '172.17.3.2,172.17.3.3', dstPort: '8080-8080', storageLength: '128字节' },
+    { id: 2, ruleId: '37079', name: 'Critical Business Applications', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 2, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 3, ruleId: '38326', name: '副本-Critical Business Applications', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 4, ruleId: '38328', name: '副本-Critical Business Applications1', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 4, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本1', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 5, ruleId: '38330', name: '副本-Critical Business Applications2', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 5, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本2', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 6, ruleId: '38332', name: '副本-Critical Business Applications3', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 6, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本3', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 7, ruleId: '38334', name: '副本-Critical Business Applications4', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 7, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本4', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 8, ruleId: '38336', name: '副本-Critical Business Applications5', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 8, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本5', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 9, ruleId: '38338', name: '副本-Critical Business Applications6', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 9, protocol: 'IPv4应用', tab: '自定义TCP', description: '关键业务应用副本6', srcIp: 'any', srcPort: 'any', dstIp: '172.17.84.35', dstPort: '11-15', storageLength: '128字节' },
+    { id: 10, ruleId: '39535', name: '19092-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 10, protocol: 'IPv4应用', tab: '自定义TCP', description: '19092端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '19092-19092', storageLength: '128字节' },
+    { id: 11, ruleId: '39536', name: '30080-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 11, protocol: 'IPv4应用', tab: '自定义TCP', description: '30080端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '30080-30080', storageLength: '128字节' },
+    { id: 12, ruleId: '39537', name: '8848-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 12, protocol: 'IPv4应用', tab: '自定义TCP', description: '8848端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '8848-8848', storageLength: '128字节' },
+    { id: 13, ruleId: '39538', name: '27019-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 13, protocol: 'IPv4应用', tab: '自定义TCP', description: '27019端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '27019-27019', storageLength: '128字节' },
+    { id: 14, ruleId: '39539', name: '9080-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 14, protocol: 'IPv4应用', tab: '自定义TCP', description: '9080端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '9080-9080', storageLength: '128字节' },
+    { id: 15, ruleId: '39540', name: '6443-test', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 15, protocol: 'IPv4应用', tab: '自定义TCP', description: '6443端口测试', srcIp: 'any', srcPort: 'any', dstIp: '0.0.0.0/0', dstPort: '6443-6443', storageLength: '128字节' },
+    { id: 16, ruleId: '42401', name: '手工创建', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 16, protocol: 'IPv4应用', tab: '自定义TCP', description: '手工创建的应用', srcIp: 'any', srcPort: 'any', dstIp: '2.2.2.2', dstPort: '0-65535', storageLength: '128字节' },
     // IPV4 UDP
-    { id: 4, ruleId: '22892', name: 'IPv4-Custom-DNS', protocol_type: 'UDP', port: '探针(Retx):接口1; 探针(重传):接口1', priority: 4, protocol: 'IPV4应用', tab: '自定义应用(UDP)', description: '内网解析DNS低时延数据探针流', srcIp: 'any', srcPort: 'any', dstIp: '114.114.114.114', dstPort: '53' },
-    { id: 5, ruleId: '22852', name: 'IPv4-Custom-Syslog', protocol_type: 'UDP', port: '探针(重传):接口1', priority: 5, protocol: 'IPV4应用', tab: '自定义应用(UDP)', description: '统一日志服务器中继队列流控', srcIp: '172.16.8.99', srcPort: 'any', dstIp: '172.16.8.1', dstPort: '514' },
+    { id: 17, ruleId: '22892', name: 'IPv4-Custom-DNS', protocol_type: 'UDP', port: '探针(Retx):接口1; 探针(重传):接口1', priority: 4, protocol: 'IPv4应用', tab: '自定义UDP', description: '内网解析DNS低时延数据探针流', srcIp: 'any', srcPort: 'any', dstIp: '114.114.114.114', dstPort: '53' },
+    { id: 18, ruleId: '22852', name: 'IPv4-Custom-Syslog', protocol_type: 'UDP', port: '探针(重传):接口1', priority: 5, protocol: 'IPv4应用', tab: '自定义UDP', description: '统一日志服务器中继队列流控', srcIp: '172.16.8.99', srcPort: 'any', dstIp: '172.16.8.1', dstPort: '514' },
     // IPV4 Known TCP
-    { id: 6, ruleId: '10001', name: 'IPv4-Known-HTTP', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPV4应用', tab: '已知应用(TCP)', description: '已知传统HTTP网页业务分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '80', storageLength: '全包' },
-    { id: 7, ruleId: '10002', name: 'IPv4-Known-FTP', protocol_type: 'TCP', port: '所有接口', priority: 2, protocol: 'IPV4应用', tab: '已知应用(TCP)', description: '已知传统FTP file transfer端口提取', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '21' },
+    { id: 19, ruleId: '10001', name: 'IPv4-Known-HTTP', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPv4应用', tab: '已知TCP', description: '已知传统HTTP网页业务分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '80', storageLength: '全包' },
+    { id: 20, ruleId: '10002', name: 'IPv4-Known-FTP', protocol_type: 'TCP', port: '所有接口', priority: 2, protocol: 'IPv4应用', tab: '已知TCP', description: '已知传统FTP file transfer端口提取', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '21' },
     // IPV4 Known UDP
-    { id: 8, ruleId: '10011', name: 'IPv4-Known-SNMP', protocol_type: 'UDP', port: '所有接口', priority: 1, protocol: 'IPV4应用', tab: '已知应用(UDP)', description: '已知标准SNMP网管轮询规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '161, 162' },
-    { id: 9, ruleId: '10012', name: 'IPv4-Known-DHCP', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: 'IPV4应用', tab: '已知应用(UDP)', description: '已知DHCP地址分配报文镜像规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '67, 68' },
+    { id: 21, ruleId: '10011', name: 'IPv4-Known-SNMP', protocol_type: 'UDP', port: '所有接口', priority: 1, protocol: 'IPv4应用', tab: '已知UDP', description: '已知标准SNMP网管轮询规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '161, 162' },
+    { id: 22, ruleId: '10012', name: 'IPv4-Known-DHCP', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: 'IPv4应用', tab: '已知UDP', description: '已知DHCP地址分配报文镜像规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '67, 68' },
     // IPV4 IP Layer
-    { id: 10, ruleId: '40001', name: 'IPv4-IP-ICMP-Rule', protocol_type: 'ICMP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 1, protocol: 'IPV4应用', tab: 'IP应用', description: 'Ping监控ICMP流抓取规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 11, ruleId: '40002', name: 'IPv4-IP-OSPF-Rule', protocol_type: 'OSPF', port: '探针(Retx):接口1', priority: 2, protocol: 'IPV4应用', tab: 'IP应用', description: 'OSPF动态路由状态分析过滤器', srcIp: 'any', srcPort: 'any', dstIp: '224.0.0.5', dstPort: 'any' },
-    { id: 12, ruleId: '40003', name: 'IPv4-IP-GRE-Rule', protocol_type: 'GRE', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 3, protocol: 'IPV4应用', tab: 'IP应用', description: 'GRE隧道封装协议流控模块', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 41, ruleId: '40101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 4, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 42, ruleId: '40102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 5, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any', srcPort: 'any', dstIp: '224.0.0.0/4', dstPort: 'any' },
-    { id: 43, ruleId: '40103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 6, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 44, ruleId: '40104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 7, protocol: 'IPV4应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 23, ruleId: '40001', name: 'IPv4-IP-ICMP-Rule', protocol_type: 'ICMP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 1, protocol: 'IPv4应用', tab: 'IP协议', description: 'Ping监控ICMP流抓取规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 24, ruleId: '40002', name: 'IPv4-IP-OSPF-Rule', protocol_type: 'OSPF', port: '探针(Retx):接口1', priority: 2, protocol: 'IPv4应用', tab: 'IP协议', description: 'OSPF动态路由状态分析过滤器', srcIp: 'any', srcPort: 'any', dstIp: '224.0.0.5', dstPort: 'any' },
+    { id: 25, ruleId: '40003', name: 'IPv4-IP-GRE-Rule', protocol_type: 'GRE', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 3, protocol: 'IPv4应用', tab: 'IP协议', description: 'GRE隧道封装协议流控模块', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 41, ruleId: '40101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 4, protocol: 'IPv4应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 42, ruleId: '40102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 5, protocol: 'IPv4应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any', srcPort: 'any', dstIp: '224.0.0.0/4', dstPort: 'any' },
+    { id: 43, ruleId: '40103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 6, protocol: 'IPv4应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 44, ruleId: '40104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 7, protocol: 'IPv4应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
     // IPV4 L7 Layer
-    { id: 13, ruleId: '70001', name: 'IPv4-L7-WeChat', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'SSL', description: '深度解析微信通讯流指纹', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any', storageLength: '自定义', customCaptureLength: '256' },
-    { id: 14, ruleId: '70002', name: 'IPv4-L7-Amap', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'HTTP', description: '高德地图时空定位API数据分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 53, ruleId: '70003', name: 'IPv4-L7-DNS-TCP', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'DNS(TCP)', description: 'L7 DNS over TCP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
-    { id: 54, ruleId: '70004', name: 'IPv4-L7-DNS-UDP', protocol_type: 'UDP', port: '探针(Retx):接口1', priority: 1, protocol: 'IPV4应用', tab: 'L7应用', l7Group: 'DNS(UDP)', description: 'L7 DNS over UDP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
+    { id: 26, ruleId: '70001', name: 'IPv4-L7-WeChat', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: 'IPv4应用', tab: 'L7', l7Group: 'SSL', description: '深度解析微信通讯流指纹', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any', storageLength: '自定义', customCaptureLength: '256' },
+    { id: 27, ruleId: '70002', name: 'IPv4-L7-Amap', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPv4应用', tab: 'L7', l7Group: 'HTTP', description: '高德地图时空定位API数据分析', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 53, ruleId: '70003', name: 'IPv4-L7-DNS-TCP', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPv4应用', tab: 'L7', l7Group: 'DNS(TCP)', description: 'L7 DNS over TCP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
+    { id: 54, ruleId: '70004', name: 'IPv4-L7-DNS-UDP', protocol_type: 'UDP', port: '探针(Retx):接口1', priority: 1, protocol: 'IPv4应用', tab: 'L7', l7Group: 'DNS(UDP)', description: 'L7 DNS over UDP 解析规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
 
     // IPV6 TCP
-    { id: 15, ruleId: '60001', name: 'IPv6-Custom-Cloud', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 1, protocol: 'IPV6应用', tab: '自定义应用(TCP)', description: 'IPv6原生微服务应用管理网关', srcIp: '2001:db8::/32', srcPort: 'any', dstIp: '2001:db8:1::100', dstPort: '8080' },
-    { id: 16, ruleId: '60003', name: 'IPv6-Custom-API', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 2, protocol: 'IPV6应用', tab: '自定义应用(TCP)', description: 'IPv6分布式集群边缘API调度', srcIp: '2001:db8::/32', srcPort: 'any', dstIp: '2001:db8:1::200', dstPort: '9000' },
-    { id: 31, ruleId: '60005', name: 'IPv6-Custom-MQTT-IoT', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 3, protocol: 'IPV6应用', tab: '自定义应用(TCP)', description: '原生IPv6物联网高吞吐设备物联控制流', srcIp: '2409:8a1e::/32', srcPort: 'any', dstIp: '2409:8a1e:100a::5', dstPort: '1883' },
-    { id: 32, ruleId: '60006', name: 'IPv6-Custom-K8s-Etcd', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 4, protocol: 'IPV6应用', tab: '自定义应用(TCP)', description: '双栈数据中心Kubernetes集群内部控制Etcd调用', srcIp: 'fe80::/64', srcPort: 'any', dstIp: 'fe80::100a:2c04', dstPort: '2379, 2380' },
+    { id: 28, ruleId: '60001', name: 'IPv6-Custom-Cloud', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 1, protocol: 'IPv6应用', tab: '自定义TCP', description: 'IPv6原生微服务应用管理网关', srcIp: '2001:db8::/32', srcPort: 'any', dstIp: '2001:db8:1::100', dstPort: '8080' },
+    { id: 29, ruleId: '60003', name: 'IPv6-Custom-API', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 2, protocol: 'IPv6应用', tab: '自定义TCP', description: 'IPv6分布式集群边缘API调度', srcIp: '2001:db8::/32', srcPort: 'any', dstIp: '2001:db8:1::200', dstPort: '9000' },
+    { id: 31, ruleId: '60005', name: 'IPv6-Custom-MQTT-IoT', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 3, protocol: 'IPv6应用', tab: '自定义TCP', description: '原生IPv6物联网高吞吐设备物联控制流', srcIp: '2409:8a1e::/32', srcPort: 'any', dstIp: '2409:8a1e:100a::5', dstPort: '1883' },
+    { id: 32, ruleId: '60006', name: 'IPv6-Custom-K8s-Etcd', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 4, protocol: 'IPv6应用', tab: '自定义TCP', description: '双栈数据中心Kubernetes集群内部控制Etcd调用', srcIp: 'fe80::/64', srcPort: 'any', dstIp: 'fe80::100a:2c04', dstPort: '2379, 2380' },
     // IPV6 UDP
-    { id: 17, ruleId: '60002', name: 'IPv6-Custom-UDP-Log', protocol_type: 'UDP', port: '探针(重传):接口1', priority: 1, protocol: 'IPV6应用', tab: '自定义应用(UDP)', description: 'IPv6高吞吐量UDP采集总线', srcIp: 'any', srcPort: 'any', dstIp: '2001:db8:2::50', dstPort: '514' },
-    { id: 33, ruleId: '60010', name: 'IPv6-Custom-CoAP-Smart', protocol_type: 'UDP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPV6应用', tab: '自定义应用(UDP)', description: '海量无线传感器IPv6终端低能耗CoAP汇聚网关', srcIp: 'any', srcPort: 'any', dstIp: '2400:3200::1', dstPort: '5683' },
+    { id: 30, ruleId: '60002', name: 'IPv6-Custom-UDP-Log', protocol_type: 'UDP', port: '探针(重传):接口1', priority: 1, protocol: 'IPv6应用', tab: '自定义UDP', description: 'IPv6高吞吐量UDP采集总线', srcIp: 'any', srcPort: 'any', dstIp: '2001:db8:2::50', dstPort: '514' },
+    { id: 33, ruleId: '60010', name: 'IPv6-Custom-CoAP-Smart', protocol_type: 'UDP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPv6应用', tab: '自定义UDP', description: '海量无线传感器IPv6终端低能耗CoAP汇聚网关', srcIp: 'any', srcPort: 'any', dstIp: '2400:3200::1', dstPort: '5683' },
     // IPV6 Known TCP
-    { id: 18, ruleId: '30001', name: 'IPv6-Known-HTTPS', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPV6应用', tab: '已知应用(TCP)', description: '原生安全IPv6双绞HTTPS业务段', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '443' },
-    { id: 34, ruleId: '30002', name: 'IPv6-Known-SSHv6', protocol_type: 'TCP', port: '所有接口', priority: 2, protocol: 'IPV6应用', tab: '已知应用(TCP)', description: '企业专网IPv6通道高强度SSH远程外围巡检', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '22' },
-    { id: 35, ruleId: '30003', name: 'IPv6-Known-LDAPv6', protocol_type: 'TCP', port: '所有接口', priority: 3, protocol: 'IPV6应用', tab: '已知应用(TCP)', description: '统一中心域控Active Directory跨地域验证LDAP-IPv6流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '389, 636' },
+    { id: 34, ruleId: '30001', name: 'IPv6-Known-HTTPS', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: 'IPv6应用', tab: '已知TCP', description: '原生安全IPv6双绞HTTPS业务段', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '443' },
+    { id: 35, ruleId: '30002', name: 'IPv6-Known-SSHv6', protocol_type: 'TCP', port: '所有接口', priority: 2, protocol: 'IPv6应用', tab: '已知TCP', description: '企业专网IPv6通道高强度SSH远程外围巡检', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '22' },
+    { id: 36, ruleId: '30003', name: 'IPv6-Known-LDAPv6', protocol_type: 'TCP', port: '所有接口', priority: 3, protocol: 'IPv6应用', tab: '已知TCP', description: '统一中心域控Active Directory跨地域验证LDAP-IPv6流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '389, 636' },
     // IPV6 Known UDP
-    { id: 19, ruleId: '30011', name: 'IPv6-Known-QUIC', protocol_type: 'UDP', port: '所有接口', priority: 1, protocol: 'IPV6应用', tab: '已知应用(UDP)', description: '已知高并发QUIC/HTTP3协议支持', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '443' },
-    { id: 36, ruleId: '30012', name: 'IPv6-Known-DNSv6', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: 'IPV6应用', tab: '已知应用(UDP)', description: '公共IPv6 DNS深度解析流镜像规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
+    { id: 37, ruleId: '30011', name: 'IPv6-Known-QUIC', protocol_type: 'UDP', port: '所有接口', priority: 1, protocol: 'IPv6应用', tab: '已知UDP', description: '已知高并发QUIC/HTTP3协议支持', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '443' },
+    { id: 38, ruleId: '30012', name: 'IPv6-Known-DNSv6', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: 'IPv6应用', tab: '已知UDP', description: '公共IPv6 DNS深度解析流镜像规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: '53' },
     // IPV6 IP
-    { id: 20, ruleId: '50001', name: 'IPv6-IP-ICMPv6-Rule', protocol_type: 'ICMPV6', port: '探针(重传):接口1', priority: 1, protocol: 'IPV6应用', tab: 'IP应用', description: 'IPv6发现与寻址ICMPv6基础侦听', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 21, ruleId: '50002', name: 'IPv6-IP-ESP-Tunnel', protocol_type: 'ESP', port: '探针(重传):接口1', priority: 2, protocol: 'IPV6应用', tab: 'IP应用', description: 'IPSec隧道防泄密ESP流解析器', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 37, ruleId: '50003', name: 'IPv6-IP-OSPFv3-Routing', protocol_type: 'OSPF', port: '探针(SRV6):接口1', priority: 3, protocol: 'IPV6应用', tab: 'IP应用', description: '三层多链路 OSPFv3 动态协商路由会话探针', srcIp: 'any', srcPort: 'any', dstIp: 'ff02::5, ff02::6', dstPort: 'any' },
-    { id: 38, ruleId: '50004', name: 'IPv6-IP-GREv6-Tunnel', protocol_type: 'GRE', port: '探针(Retx):接口1', priority: 4, protocol: 'IPV6应用', tab: 'IP应用', description: '跨广域分公司GREv6封装底层隧道检测', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 45, ruleId: '50101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 5, protocol: 'IPV6应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 46, ruleId: '50102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 6, protocol: 'IPV6应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any', srcPort: 'any', dstIp: 'ff00::/8', dstPort: 'any' },
-    { id: 47, ruleId: '50103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 7, protocol: 'IPV6应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 48, ruleId: '50104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 8, protocol: 'IPV6应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 39, ruleId: '50001', name: 'IPv6-IP-ICMPv6-Rule', protocol_type: 'ICMPV6', port: '探针(重传):接口1', priority: 1, protocol: 'IPv6应用', tab: 'IP协议', description: 'IPv6发现与寻址ICMPv6基础侦听', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 40, ruleId: '50002', name: 'IPv6-IP-ESP-Tunnel', protocol_type: 'ESP', port: '探针(重传):接口1', priority: 2, protocol: 'IPv6应用', tab: 'IP协议', description: 'IPSec隧道防泄密ESP流解析器', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 45, ruleId: '50003', name: 'IPv6-IP-OSPFv3-Routing', protocol_type: 'OSPF', port: '探针(SRV6):接口1', priority: 3, protocol: 'IPv6应用', tab: 'IP协议', description: '三层多链路 OSPFv3 动态协商路由会话探针', srcIp: 'any', srcPort: 'any', dstIp: 'ff02::5, ff02::6', dstPort: 'any' },
+    { id: 46, ruleId: '50004', name: 'IPv6-IP-GREv6-Tunnel', protocol_type: 'GRE', port: '探针(Retx):接口1', priority: 4, protocol: 'IPv6应用', tab: 'IP协议', description: '跨广域分公司GREv6封装底层隧道检测', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 47, ruleId: '50101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 5, protocol: 'IPv6应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 48, ruleId: '50102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 6, protocol: 'IPv6应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any', srcPort: 'any', dstIp: 'ff00::/8', dstPort: 'any' },
+    { id: 49, ruleId: '50103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 7, protocol: 'IPv6应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 50, ruleId: '50104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 8, protocol: 'IPv6应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
     // IPV6 L7
-    { id: 22, ruleId: '80001', name: 'IPv6-L7-Douyin', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 1, protocol: 'IPV6应用', tab: 'L7应用', l7Group: 'HTTP', description: '抖音短视频客户端点对点资源池', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 39, ruleId: '80002', name: 'IPv6-L7-Bilibili', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPV6应用', tab: 'L7应用', l7Group: 'HTTP', description: '哔哩哔哩原生IPv6高画质画中画分流极速控制规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
-    { id: 40, ruleId: '80003', name: 'IPv6-L7-Alipay', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPV6应用', tab: 'L7应用', l7Group: 'SSL', description: '支付宝金融应用原生IPv6可信网络通道保障', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 51, ruleId: '80001', name: 'IPv6-L7-Douyin', protocol_type: 'TCP', port: '探针(重传):接口1', priority: 1, protocol: 'IPv6应用', tab: 'L7', l7Group: 'HTTP', description: '抖音短视频客户端点对点资源池', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 52, ruleId: '80002', name: 'IPv6-L7-Bilibili', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPv6应用', tab: 'L7', l7Group: 'HTTP', description: '哔哩哔哩原生IPv6高画质画中画分流极速控制规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
+    { id: 55, ruleId: '80003', name: 'IPv6-L7-Alipay', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPv6应用', tab: 'L7', l7Group: 'SSL', description: '支付宝金融应用原生IPv6可信网络通道保障', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
 
-    // 混栈应用 (Dual Stack)
-    { id: 23, ruleId: '9201', name: 'DS-Custom-Web-Gateway', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混栈应用', tab: '自定义应用(TCP)', description: '混栈入包全链路路由控制接口', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.1 / 2001:db8:200::1', dstPort: '80, 443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.1', dstIpV6: '2001:db8:200::1' },
-    { id: 24, ruleId: '9203', name: 'DS-Custom-Edge-API', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混栈应用', tab: '自定义应用(TCP)', description: '节点分流混栈策略应用', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.10 / 2409:8a0e:25::10', dstPort: '8443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.10', dstIpV6: '2409:8a0e:25::10' },
-    { id: 25, ruleId: '9202', name: 'DS-Custom-NTP-Sync', protocol_type: 'UDP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: '混栈应用', tab: '自定义应用(UDP)', description: '两层多时钟同步NTP网络适配', srcIp: 'any / any', srcPort: 'any', dstIp: '119.29.29.29 / 2402:f000:1:401::8', dstPort: '123', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '119.29.29.29', dstIpV6: '2402:f000:1:401::8' },
-    { id: 26, ruleId: '9204', name: 'DS-Custom-Telemetry', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: '混栈应用', tab: '自定义应用(UDP)', description: '混栈高速遥测采集任务通道', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.1.5 / 2001:db8:9999::5', dstPort: '2019', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.1.5', dstIpV6: '2001:db8:9999::5' },
-    { id: 27, ruleId: '9301', name: 'DS-IP-ALL-Pass', protocol_type: 'ALL', port: '所有接口', priority: 1, protocol: '混栈应用', tab: 'IP应用', description: '放行层三层四通用控制包', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 28, ruleId: '9302', name: 'DS-IP-GRE-Bridge', protocol_type: 'GRE', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混栈应用', tab: 'IP应用', description: '混栈网络GRE点对点虚拟链路', srcIp: '192.168.50.1 / fe80::5001', srcPort: 'any', dstIp: '192.168.50.2 / fe80::5002', dstPort: 'any', srcIpV4: '192.168.50.1', srcIpV6: 'fe80::5001', dstIpV4: '192.168.50.2', dstIpV6: 'fe80::5002' },
-    { id: 49, ruleId: '93101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 3, protocol: '混栈应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 50, ruleId: '93102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 4, protocol: '混栈应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any / any', srcPort: 'any', dstIp: '224.0.0.0/4 / ff00::/8', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '224.0.0.0/4', dstIpV6: 'ff00::/8' },
-    { id: 51, ruleId: '93103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 5, protocol: '混栈应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 52, ruleId: '93104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 6, protocol: '混栈应用', tab: 'IP应用', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 29, ruleId: '9401', name: 'DS-L7-QQ-Video', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混栈应用', tab: 'L7应用', l7Group: 'HTTP', description: 'QQ视频多媒体实时混通保障', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' }
+    // 混线应用 (Dual Stack)
+    { id: 56, ruleId: '9201', name: 'DS-Custom-Web-Gateway', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混线应用', tab: '自定义TCP', description: '混栈入包全链路路由控制接口', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.1 / 2001:db8:200::1', dstPort: '80, 443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.1', dstIpV6: '2001:db8:200::1' },
+    { id: 57, ruleId: '9203', name: 'DS-Custom-Edge-API', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混线应用', tab: '自定义TCP', description: '节点分流混栈策略应用', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.10 / 2409:8a0e:25::10', dstPort: '8443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.10', dstIpV6: '2409:8a0e:25::10' },
+    { id: 58, ruleId: '9202', name: 'DS-Custom-NTP-Sync', protocol_type: 'UDP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: '混线应用', tab: '自定义UDP', description: '两层多时钟同步NTP网络适配', srcIp: 'any / any', srcPort: 'any', dstIp: '119.29.29.29 / 2402:f000:1:401::8', dstPort: '123', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '119.29.29.29', dstIpV6: '2402:f000:1:401::8' },
+    { id: 59, ruleId: '9204', name: 'DS-Custom-Telemetry', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: '混线应用', tab: '自定义UDP', description: '混栈高速遥测采集任务通道', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.1.5 / 2001:db8:9999::5', dstPort: '2019', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.1.5', dstIpV6: '2001:db8:9999::5' },
+    { id: 60, ruleId: '9301', name: 'DS-IP-ALL-Pass', protocol_type: 'ALL', port: '所有接口', priority: 1, protocol: '混线应用', tab: 'IP协议', description: '放行层三层四通用控制包', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 61, ruleId: '9302', name: 'DS-IP-GRE-Bridge', protocol_type: 'GRE', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混线应用', tab: 'IP协议', description: '混栈网络GRE点对点虚拟链路', srcIp: '192.168.50.1 / fe80::5001', srcPort: 'any', dstIp: '192.168.50.2 / fe80::5002', dstPort: 'any', srcIpV4: '192.168.50.1', srcIpV6: 'fe80::5001', dstIpV4: '192.168.50.2', dstIpV6: 'fe80::5002' },
+    { id: 62, ruleId: '93101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 3, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 63, ruleId: '93102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 4, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any / any', srcPort: 'any', dstIp: '224.0.0.0/4 / ff00::/8', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '224.0.0.0/4', dstIpV6: 'ff00::/8' },
+    { id: 64, ruleId: '93103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 5, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 65, ruleId: '93104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 6, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 66, ruleId: '9401', name: 'DS-L7-QQ-Video', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混线应用', tab: 'L7', l7Group: 'HTTP', description: 'QQ视频多媒体实时混通保障', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' }
   ]);
 
   // Filter variables
@@ -1050,8 +1087,6 @@ export default function RuleManagement() {
     // Check Tab Match
     if (item.tab !== activeTab) return false;
 
-    if (!ruleBoundToProbe(item.port || '', selectedProbe)) return false;
-
     // Filter by Application Name (应用名称)
     if (appliedFilterName.trim() !== '') {
       if (!item.name.toLowerCase().includes(appliedFilterName.toLowerCase())) return false;
@@ -1085,7 +1120,7 @@ export default function RuleManagement() {
   const filteredIds = filteredTableData.map((r) => r.id);
   const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedRuleIds.includes(id));
   const isReadonlyConfigRule = (item: any) => {
-    return (item.tab || '').includes('已知应用') || (item.tab === 'IP应用' && !!item.isDefaultIpApp);
+    return (item.tab || '').startsWith('已知') || (item.tab === 'IP协议' && !!item.isDefaultIpApp);
   };
 
   const defaultL7GroupRank = l7GroupOptions.reduce((acc: Record<string, number>, g, idx) => {
@@ -1093,7 +1128,7 @@ export default function RuleManagement() {
     return acc;
   }, { DNS: 0 } as Record<string, number>);
 
-  const visibleL7Groups = activeTab === 'L7应用'
+  const visibleL7Groups = activeTab === 'L7'
     ? [...new Set(filteredTableData.map((r) => r.l7Group || '').filter(Boolean))].sort(
         (a, b) => (defaultL7GroupRank[a] ?? 999) - (defaultL7GroupRank[b] ?? 999)
       )
@@ -1115,7 +1150,7 @@ export default function RuleManagement() {
     setL7GroupPageByProtocol((prev) => ({ ...prev, [getL7GroupPageKey(group)]: page }));
   };
 
-  const displayedTableData = activeTab === 'L7应用'
+  const displayedTableData = activeTab === 'L7'
     ? [...filteredTableData].sort((a, b) => {
         const ga = defaultL7GroupRank[a.l7Group || ''] ?? 999;
         const gb = defaultL7GroupRank[b.l7Group || ''] ?? 999;
@@ -1124,7 +1159,7 @@ export default function RuleManagement() {
       })
     : filteredTableData;
 
-  const l7GroupSections = activeTab === 'L7应用'
+  const l7GroupSections = activeTab === 'L7'
     ? visibleL7Groups.map((group) => {
         const items = displayedTableData.filter((r) => (r.l7Group || '') === group);
         const totalPages = Math.max(1, Math.ceil(items.length / L7_GROUP_PAGE_SIZE));
@@ -1143,11 +1178,11 @@ export default function RuleManagement() {
 
   const tableColumns = columns.filter((col) => {
     if (!col.visible) return false;
-    if (activeTab === 'IP应用' && (col.id === 'srcPort' || col.id === 'dstPort')) return false;
+    if (activeTab === 'IP协议' && (col.id === 'srcPort' || col.id === 'dstPort')) return false;
     return true;
   });
 
-  const configurableColumns = activeTab === 'IP应用'
+  const configurableColumns = activeTab === 'IP协议'
     ? columns.filter((col) => col.id !== 'srcPort' && col.id !== 'dstPort')
     : columns;
 
@@ -1271,7 +1306,7 @@ export default function RuleManagement() {
   const getRuleInterfaces = (portVal: string) => getRuleProbeList(portVal);
 
   const isTcpUdpIpAdvancedTab = (tab: string) =>
-    tab === '自定义应用(TCP)' || tab === '自定义应用(UDP)' || tab === 'IP应用';
+    tab === '自定义TCP' || tab === '自定义UDP' || tab === 'IP协议';
 
   const pickAdvancedFields = (src: any) => ({
     timeout: src.timeout,
@@ -1437,7 +1472,7 @@ export default function RuleManagement() {
     setActiveEditId(null);
     setEditLockedProbes([]);
     setValidationError(null);
-    const readOnly = activeTab.includes('已知应用');
+    const readOnly = activeTab.startsWith('已知');
     setIsReadOnly(readOnly);
     setFormData({
       name: '',
@@ -1500,7 +1535,7 @@ export default function RuleManagement() {
     setIsEditMode(true);
     setActiveEditId(item.id);
     setValidationError(null);
-    const readOnly = item.tab ? item.tab.includes('已知应用') : false;
+    const readOnly = item.tab ? item.tab.startsWith('已知') : false;
     setIsReadOnly(readOnly);
     const locked = getRuleInterfaces(item.port || '');
     setEditLockedProbes(locked);
@@ -1627,7 +1662,7 @@ export default function RuleManagement() {
     setActiveEditId(null);
     setEditLockedProbes([]);
     setValidationError(null);
-    const readOnly = item.tab ? item.tab.includes('已知应用') : false;
+    const readOnly = item.tab ? item.tab.startsWith('已知') : false;
     setIsReadOnly(readOnly);
     const p2Vals = parseP2(item.p2);
     setFormData({
@@ -1815,7 +1850,7 @@ export default function RuleManagement() {
   };
 
   const moveRuleToTop = (index: number) => {
-    if (activeTab === 'L7应用') {
+    if (activeTab === 'L7') {
       const item = displayedTableData[index];
       if (!item) return;
       const groupItems = displayedTableData.filter((r) => (r.l7Group || '') === (item.l7Group || ''));
@@ -1830,7 +1865,7 @@ export default function RuleManagement() {
   };
 
   const moveRuleToBottom = (index: number) => {
-    if (activeTab === 'L7应用') {
+    if (activeTab === 'L7') {
       const item = displayedTableData[index];
       if (!item) return;
       const groupItems = displayedTableData.filter((r) => (r.l7Group || '') === (item.l7Group || ''));
@@ -1846,7 +1881,7 @@ export default function RuleManagement() {
   };
 
   const moveRuleUp = (index: number) => {
-    if (activeTab === 'L7应用') {
+    if (activeTab === 'L7') {
       const item = displayedTableData[index];
       if (!item) return;
       const groupItems = displayedTableData.filter((r) => (r.l7Group || '') === (item.l7Group || ''));
@@ -1862,7 +1897,7 @@ export default function RuleManagement() {
   };
 
   const moveRuleDown = (index: number) => {
-    if (activeTab === 'L7应用') {
+    if (activeTab === 'L7') {
       const item = displayedTableData[index];
       if (!item) return;
       const groupItems = displayedTableData.filter((r) => (r.l7Group || '') === (item.l7Group || ''));
@@ -1957,21 +1992,21 @@ export default function RuleManagement() {
     }
 
     if (!formData.name.trim()) return;
-    if (activeTab === 'L7应用' && !formData.l7Group) {
+    if (activeTab === 'L7' && !formData.l7Group) {
       setValidationError('请先选择L7协议（DNS(TCP)/DNS(UDP)/HTTP/SSL/Oracle/MySQL/PostgreSQL）。');
       return;
     }
-    if (activeTab === 'IP应用' && !ipProtocolOptions.includes(formData.protocolType)) {
+    if (activeTab === 'IP协议' && !ipProtocolOptions.includes(formData.protocolType)) {
       setValidationError('请先选择IP协议（ICMP/IGMP/ESP/AH/EIGRP/OSPF/UNICAST/MULTICAST/ALL）。');
       return;
     }
 
     const resolvedSrcIp = serializeAdvancedGroup(advancedGroups.srcIp) || formData.srcIp;
-    const resolvedSrcPort = activeTab === 'IP应用'
+    const resolvedSrcPort = activeTab === 'IP协议'
       ? 'any'
       : (serializeAdvancedGroup(advancedGroups.srcPort) || formData.srcPort);
     const resolvedDstIp = serializeAdvancedGroup(advancedGroups.dstIp) || formData.dstIp;
-    const resolvedDstPort = activeTab === 'IP应用'
+    const resolvedDstPort = activeTab === 'IP协议'
       ? 'any'
       : (serializeAdvancedGroup(advancedGroups.dstPort) || formData.dstPort);
 
@@ -1980,7 +2015,7 @@ export default function RuleManagement() {
       return;
     }
 
-    if (protocol === '混栈应用') {
+    if (protocol === '混线应用') {
       const ipText = `${resolvedSrcIp} ${resolvedDstIp}`;
       const hasV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(ipText);
       const hasV6 = /[a-fA-F0-9]*:[a-fA-F0-9:]+/.test(ipText);
@@ -1993,7 +2028,7 @@ export default function RuleManagement() {
 
     setValidationError(null);
 
-    const resolvedProtocolType = activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType;
+    const resolvedProtocolType = activeTab === 'L7' ? getTransportByL7Group(formData.l7Group) : formData.protocolType;
     const resolvedTimeout = resolvedProtocolType === 'UDP' ? '30' : formData.timeout;
 
     const p2Serialized = composeP2Serialized(formData);
@@ -2004,8 +2039,8 @@ export default function RuleManagement() {
           return {
             ...r,
             name: formData.name,
-            protocol_type: activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
-            l7Group: activeTab === 'L7应用' ? formData.l7Group : r.l7Group,
+            protocol_type: activeTab === 'L7' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
+            l7Group: activeTab === 'L7' ? formData.l7Group : r.l7Group,
             port: formData.probeMode === 'all' ? '所有接口' : (formData.selectedProbes.length > 0 ? formData.selectedProbes.join('; ') : '默认接口'),
             description: formData.description,
             timeout: resolvedTimeout,
@@ -2031,8 +2066,8 @@ export default function RuleManagement() {
         id: newId,
         ruleId: randomRuleId,
         name: formData.name,
-        protocol_type: activeTab === 'L7应用' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
-        l7Group: activeTab === 'L7应用' ? formData.l7Group : undefined,
+        protocol_type: activeTab === 'L7' ? getTransportByL7Group(formData.l7Group) : formData.protocolType,
+        l7Group: activeTab === 'L7' ? formData.l7Group : undefined,
         port: formData.probeMode === 'all' ? '所有接口' : (formData.selectedProbes.length > 0 ? formData.selectedProbes.join('; ') : '默认接口'),
         priority: 10 + filteredTableData.length,
         protocol: protocol,
@@ -2091,7 +2126,67 @@ export default function RuleManagement() {
         name: file.name,
         size: Math.round(file.size / 1024)
       });
+      setImportReport(null);
+      setImportLimitError(null);
     }
+  };
+
+  // 解析导入文件（模拟）：按模版 13 列格式解析
+  // 模版列：应用名称 | 应用ID | 类型(TCP/UDP/IP/L7) | 源IP | 源端口 | 目的IP | 目的端口 | 源IP排除(选填) | 源端口排除(选填) | 目的IP排除(选填) | 目的端口排除(选填) | 裁包长度 | 标识/备注
+  const parseImportFile = () => {
+    if (!importedFile) return [];
+    // 模拟从 Excel 中解析出的规则行（此处用当前筛选结果 + 若干示例模拟）
+    const base = filteredTableData.slice(0, 3).map((r) => ({
+      name: r.name || '',
+      ruleId: r.ruleId || '',
+      type: r.tab === 'L7' ? 'L7' : (r.tab === 'IP协议' ? 'IP' : (r.protocol_type || '')),
+      srcIp: (r.srcIp || 'any').split(' | ')[0],
+      srcPort: (r.srcPort || 'any').split(' | ')[0],
+      dstIp: (r.dstIp || 'any').split(' | ')[0],
+      dstPort: (r.dstPort || 'any').split(' | ')[0],
+      srcIpExclude: parseExcludeFromGroup(r.srcIp),
+      srcPortExclude: parseExcludeFromGroup(r.srcPort),
+      dstIpExclude: parseExcludeFromGroup(r.dstIp),
+      dstPortExclude: parseExcludeFromGroup(r.dstPort),
+      storageLength: getCaptureLengthDisplay(r),
+      description: r.description || '',
+    }));
+    const samples = [
+      { name: 'Imported-API-Gateway', ruleId: '61001', type: 'TCP', srcIp: '10.0.0.0/8', srcPort: 'any', dstIp: '10.222.1.25', dstPort: '1883, 8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的API网关规则' },
+      { name: 'Imported-Metrics-Engine', ruleId: '61002', type: 'UDP', srcIp: 'any', srcPort: 'any', dstIp: '172.50.10.12', dstPort: '514, 2019', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的指标引擎规则' },
+    ];
+    return [...base, ...samples];
+  };
+
+  // 预导入分析：在原始表格基础上增加 结果 / 详情 两列
+  const runPreImportAnalysis = () => {
+    if (!importedFile) {
+      alert('请先选择或拖拽要导入的配置文件！');
+      return;
+    }
+    if (importSelectedInterfaces.length === 0) {
+      alert('请至少选择一个目标接口！');
+      return;
+    }
+    const rows = parseImportFile();
+    const reportRows = rows.map((row) => {
+      const name = row.name || '';
+      if (!name.trim()) {
+        return { name: '(未命名)', result: '失败' as const, detail: '应用名称为空' };
+      }
+      const type = (row.type || '').toUpperCase();
+      if (!['TCP', 'UDP', 'IP', 'L7'].includes(type)) {
+        return { name, result: '失败' as const, detail: '类型字段需填写 TCP/UDP/IP/L7' };
+      }
+      if (!row.dstIp) {
+        return { name, result: '失败' as const, detail: '目的IP为空' };
+      }
+      return { name, result: '成功' as const, detail: '' };
+    });
+    const success = reportRows.filter((r) => r.result === '成功').length;
+    const failed = reportRows.length - success;
+    setImportReport({ total: rows.length, success, failed, rows: reportRows });
+    setShowImportReportModal(true);
   };
 
   const handleConfirmImport = () => {
@@ -2099,12 +2194,44 @@ export default function RuleManagement() {
       alert('请先选择或拖拽要导入的配置文件！');
       return;
     }
-    // Simulate importing custom rule database expansion
+    if (importSelectedInterfaces.length === 0) {
+      alert('请至少选择一个目标接口！');
+      return;
+    }
+    const rows = parseImportFile();
+    // 单探针总导入上限 8000 条
+    const currentCount = allRules.filter((r) => r.protocol === protocol && r.tab === activeTab).length;
+    if (currentCount + rows.length > IMPORT_LIMIT) {
+      setImportLimitError(`导入失败：当前 ${protocol}/${activeTab} 已有 ${currentCount} 条，本次将导入 ${rows.length} 条，合计 ${currentCount + rows.length} 条，超过单探针总导入上限 ${IMPORT_LIMIT} 条。`);
+      return;
+    }
+    setImportLimitError(null);
+
     const preId = Math.max(...allRules.map(r => r.id), 0);
-    const newRules = [
-      { id: preId + 1, ruleId: String(Math.floor(61000 + Math.random() * 5000)), name: `${protocol === 'IPV6应用' ? 'IPv6' : protocol === '混栈应用' ? 'DS' : 'IPv4'}-Imported-API-Gateway`, protocol_type: 'TCP', port: importSelectedInterfaces.join('; '), priority: 11, protocol: protocol, tab: activeTab, description: '自选通道深度导入：分布式控制面高可用安全保障控制链路', srcIp: protocol === 'IPV6应用' ? '2409:8a1e::/32' : '10.0.0.0/8', srcPort: 'any', dstIp: protocol === 'IPV6应用' ? '2409:8a1e:200a::50' : '10.222.1.25', dstPort: '1883, 8080' },
-      { id: preId + 2, ruleId: String(Math.floor(62000 + Math.random() * 5000)), name: `${protocol === 'IPV6应用' ? 'IPv6' : protocol === '混栈应用' ? 'DS' : 'IPv4'}-Imported-Metrics-Engine`, protocol_type: 'UDP', port: importSelectedInterfaces.join('; '), priority: 12, protocol: protocol, tab: activeTab, description: '自选通道深度导入：采集上报端超高并发UDP离线重连数据流', srcIp: 'any', srcPort: 'any', dstIp: protocol === 'IPV6应用' ? 'fe80::100a:2c04' : '172.50.10.12', dstPort: '514, 2019' }
-    ];
+    const newRules = rows.map((row, idx) => {
+      const type = (row.type || '').toUpperCase();
+      // 类型映射：TCP/UDP -> protocol_type；IP -> IP协议 tab；L7 -> L7 tab
+      const resolvedTab = type === 'L7' ? 'L7' : (type === 'IP' ? 'IP协议' : activeTab);
+      const resolvedProtocolType = type === 'L7' ? 'TCP' : (type === 'IP' ? 'ICMP' : (type || 'TCP'));
+      return {
+        id: preId + idx + 1,
+        ruleId: row.ruleId || String(Math.floor(61000 + Math.random() * 5000)),
+        name: row.name,
+        protocol_type: resolvedProtocolType,
+        port: importSelectedInterfaces.join('; '),
+        priority: 10 + filteredTableData.length + idx,
+        protocol: protocol,
+        tab: resolvedTab,
+        description: row.description || `${row.name} 的导入规则`,
+        srcIp: row.srcIp || 'any',
+        srcPort: row.srcPort || 'any',
+        dstIp: row.dstIp || 'any',
+        dstPort: row.dstPort || 'any',
+        storageLength: row.storageLength || DEFAULT_CAPTURE_LENGTH,
+        timeout: resolvedProtocolType === 'UDP' ? '30' : '300',
+        l7Group: type === 'L7' ? (row.l7Group || 'HTTP') : undefined,
+      };
+    });
 
     if (importConflictStrategy === 'overwrite') {
       // Overwrite: clear current protocol rules on this tab and insert
@@ -2118,6 +2245,8 @@ export default function RuleManagement() {
     }
 
     setShowImportModal(false);
+    setShowImportReportModal(false);
+    setImportReport(null);
     alert(`成功从 [${importedFile.name}] 导入 ${newRules.length} 条业务流控规则并分发到以下接口：\n${importSelectedInterfaces.join(', ')}`);
   };
 
@@ -2128,6 +2257,144 @@ export default function RuleManagement() {
     setAllRules((prev) => prev.filter((r) => !idsToClear.includes(r.id)));
     setSelectedRuleIds((prev) => prev.filter((id) => !idsToClear.includes(id)));
     setShowClearAllConfirm(false);
+  };
+
+  // ---- Excel 导出 / 模版下载 ----
+  // 导出表头：与导入模版一致（中文描述，可选字段加括号说明）
+  const EXPORT_COLUMNS = [
+    { key: 'name', header: '应用名称' },
+    { key: 'ruleId', header: '应用ID' },
+    { key: 'type', header: '类型(TCP/UDP/IP/L7)' },
+    { key: 'srcIp', header: '源IP' },
+    { key: 'srcPort', header: '源端口' },
+    { key: 'dstIp', header: '目的IP' },
+    { key: 'dstPort', header: '目的端口' },
+    { key: 'srcIpExclude', header: '源IP排除 (选填）' },
+    { key: 'srcPortExclude', header: '源端口排除 (选填）' },
+    { key: 'dstIpExclude', header: '目的IP排除 (选填）' },
+    { key: 'dstPortExclude', header: '目的端口排除 (选填）' },
+    { key: 'storageLength', header: '裁包长度' },
+    { key: 'description', header: '标识/备注' },
+  ];
+
+  // 解析高级分组中的排除项（格式：`基础值 | 排除: xxx; yyy`）
+  const parseExcludeFromGroup = (serialized: string | undefined): string => {
+    if (!serialized) return '';
+    const match = String(serialized).match(/排除:\s*(.+)$/);
+    return match ? match[1].trim() : '';
+  };
+
+  // 取值与 UI 界面配置一致，不直接写后台存储数值
+  const getExportCellValue = (item: any, key: string) => {
+    switch (key) {
+      case 'type': {
+        // 类型：TCP/UDP/IP/L7，与 UI 一致
+        if (item.tab === 'L7') return 'L7';
+        if (item.tab === 'IP协议') return 'IP';
+        return item.protocol_type || '';
+      }
+      case 'storageLength':
+        return getCaptureLengthDisplay(item);
+      case 'srcIpExclude':
+        return parseExcludeFromGroup(item.srcIp);
+      case 'srcPortExclude':
+        return parseExcludeFromGroup(item.srcPort);
+      case 'dstIpExclude':
+        return parseExcludeFromGroup(item.dstIp);
+      case 'dstPortExclude':
+        return parseExcludeFromGroup(item.dstPort);
+      case 'srcIp':
+        return (item.srcIp || 'any').split(' | ')[0];
+      case 'srcPort':
+        return (item.srcPort || 'any').split(' | ')[0];
+      case 'dstIp':
+        return (item.dstIp || 'any').split(' | ')[0];
+      case 'dstPort':
+        return (item.dstPort || 'any').split(' | ')[0];
+      case 'name':
+        return item.name || '';
+      case 'ruleId':
+        return item.ruleId || '';
+      case 'description':
+        return item.description || '';
+      default:
+        return item[key] !== undefined ? String(item[key]) : '';
+    }
+  };
+
+  const buildExcelHtml = (rows: any[], columns: typeof EXPORT_COLUMNS) => {
+    const thead = `<tr>${columns.map((c) => `<th style="background:#f0f0f0;border:1px solid #ccc;padding:4px 8px;text-align:center;">${c.header}</th>`).join('')}</tr>`;
+    const tbody = rows.map((row) =>
+      `<tr>${columns.map((c) => `<td style="border:1px solid #ccc;padding:4px 8px;">${String(getExportCellValue(row, c.key) ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`).join('')}</tr>`
+    ).join('');
+    return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table>${thead}${tbody}</table></body></html>`;
+  };
+
+  const downloadBlob = (content: string, filename: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    const rows = filteredTableData;
+    if (rows.length === 0) {
+      alert('当前筛选结果为空，无可导出的应用。');
+      return;
+    }
+    // 打开导出弹窗，让用户重命名文件
+    const defaultName = `应用配置_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`;
+    setExportFileName(defaultName);
+    setExportRowCount(rows.length);
+    setShowExportModal(true);
+  };
+
+  const handleConfirmExport = () => {
+    const rows = filteredTableData;
+    if (rows.length === 0) {
+      alert('当前筛选结果为空，无可导出的应用。');
+      return;
+    }
+    const name = (exportFileName || '').trim();
+    if (!name) {
+      alert('请输入导出文件名。');
+      return;
+    }
+    const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
+    const filename = safeName.endsWith('.xls') ? safeName : `${safeName}.xls`;
+    const html = buildExcelHtml(rows, EXPORT_COLUMNS);
+    downloadBlob(html, filename, 'application/vnd.ms-excel');
+    setShowExportModal(false);
+    alert(`已导出 ${rows.length} 条应用到 Excel 文件：${filename}`);
+  };
+
+  const handleDownloadTemplate = () => {
+    // 模版：仅表头 + 一行示例，示例取值与 UI 一致
+    const sample = {
+      name: '示例应用',
+      ruleId: '10001',
+      type: 'TCP',
+      srcIp: '192.168.1.0/24',
+      srcPort: 'any',
+      dstIp: '10.0.0.5',
+      dstPort: '80, 443',
+      srcIpExclude: '',
+      srcPortExclude: '',
+      dstIpExclude: '',
+      dstPortExclude: '',
+      storageLength: '128字节',
+      description: '示例应用描述',
+    };
+    const html = buildExcelHtml([sample], EXPORT_COLUMNS);
+    const filename = `应用配置_导入模版_${new Date().toISOString().slice(0, 10)}.xls`;
+    downloadBlob(html, filename, 'application/vnd.ms-excel');
+    alert(`已下载应用配置导入模版：${filename}`);
   };
 
   const handleOpenL7GroupSettings = (group: string) => {
@@ -2182,7 +2449,7 @@ export default function RuleManagement() {
     ? activeTab
     : (activeAdvancedRule?.tab || activeTab);
   const showCpuLogCoreInAdvanced = !isTcpUdpIpAdvancedTab(activeAdvancedTab);
-  const isIpAdvancedTabActive = activeAdvancedTab === 'IP应用';
+  const isIpAdvancedTabActive = activeAdvancedTab === 'IP协议';
   const batchAdvancedRules = isBatchAdvancedMode
     ? allRules.filter((r) => batchAdvancedRuleIds.includes(r.id))
     : [];
@@ -2235,7 +2502,7 @@ export default function RuleManagement() {
     | { kind: 'rule'; item: any; index: number }
   > = [];
 
-  if (activeTab === 'L7应用') {
+  if (activeTab === 'L7') {
     l7GroupSections.forEach((section) => {
       tableRenderRows.push({ kind: 'l7-header', group: section.group });
       if (!isL7GroupCollapsed(section.group)) {
@@ -2255,150 +2522,106 @@ export default function RuleManagement() {
   }
 
   return (
-    <div className="p-4 bg-slate-50 min-h-full">
-      {/* Top Header Controls (Unified Bento-Style Controller) */}
-      <div className="bg-white p-4 py-5 rounded-xl border border-slate-200 shadow-sm mb-4 relative overflow-hidden">
-        {/* Subtle high-tech decoration inside light theme */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-slate-50 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-        
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-sky-50 border border-sky-100 rounded-lg text-sky-600">
-              <Layers className="w-5 h-5" />
-            </div>
-            <h2 className="text-base font-bold tracking-tight text-slate-800 flex items-center gap-2">
-              应用配置
-              <span className="text-[10px] bg-sky-50 text-sky-600 font-mono px-1.5 py-0.5 rounded border border-sky-200/50 font-normal">
-                PROBE v2.1
-              </span>
-            </h2>
+    <div className="p-4 bg-slate-100 min-h-full">
+      {/* Row 2: 接口选择 + 一键清空 */}
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between gap-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-600">接口</span>
+            <SearchableSelect
+              value={selectedInterface}
+              onChange={setSelectedInterface}
+              options={INTERFACE_OPTIONS}
+              className="min-w-[220px]"
+              menuZIndex={50}
+            />
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-
-            <button 
-              onClick={() => {
-                setImportedFile(null);
-                setImportConflictStrategy('merge');
-                setImportSelectedInterfaces(['Probe / Lab']);
-                setShowImportModal(true);
-              }}
-              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+              className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <Upload className="w-3.5 h-3.5 text-slate-400" />
-              <span>导入配置</span>
+              <Upload className="w-3.5 h-3.5 text-sky-500" />
+              <span>导入</span>
             </button>
-            <button 
-              onClick={() => alert('已生成当前应用配置的导出文件并开始下载！')}
-              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            <button
+              onClick={handleExportExcel}
+              className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-slate-400" />
-              <span>导出配置</span>
+              <Download className="w-3.5 h-3.5 text-sky-500" />
+              <span>导出</span>
             </button>
-            <button 
-              onClick={() => alert('已成功下载标准应用模版 (CSV/JSON 格式)。')}
-              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+            <button
+              onClick={handleDownloadTemplate}
+              className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <FileDown className="w-3.5 h-3.5 text-slate-400" />
-              <span>下载模板</span>
+              <FileDown className="w-3.5 h-3.5 text-sky-500" />
+              <span>模版下载</span>
             </button>
-            <button 
+            <button
               onClick={() => setShowClearAllConfirm(true)}
-              className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/60 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              className="px-3 py-1.5 bg-white hover:bg-red-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-500" />
               <span>一键清空</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Scope Filter Config Panel (L1 Switch & Probe Selection) */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="p-1.5 bg-sky-50 border border-sky-100 rounded-lg text-sky-600">
-            <Network className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-3">
-              <SearchableSelect
-                value={probeSourceType}
-                onChange={setProbeSourceType}
-                options={PROBE_SOURCE_OPTIONS}
-                className="min-w-[140px]"
-                menuZIndex={50}
-              />
-
-              <SearchableSelect
-                value={selectedProbe}
-                onChange={setSelectedProbe}
-                options={PROBE_OPTIONS}
-                className="min-w-[200px]"
-                menuZIndex={50}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-slate-100 p-1 rounded-xl flex items-center w-full md:w-auto overflow-x-auto no-scrollbar gap-1 shrink-0">
+      {/* Row 3: 协议分类 Tabs */}
+        <div className="px-4 py-2.5 border-b border-slate-200 flex items-center gap-2">
           {[
-            { id: 'IPV4应用', label: 'IPv4应用' },
-            { id: 'IPV6应用', label: 'IPv6应用' },
-            { id: '混栈应用', label: '混栈应用' },
+            { id: 'IPv4应用', label: 'IPv4应用' },
+            { id: 'IPv6应用', label: 'IPv6应用' },
+            { id: '混线应用', label: '混线应用' },
           ].map((p) => {
             const isSelected = protocol === p.id;
             return (
               <button
                 key={p.id}
                 onClick={() => handleProtocolChange(p.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-205 cursor-pointer ${
-                  isSelected 
-                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/50 scale-[1.01]' 
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-white/40'
+                className={`px-4 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all cursor-pointer border ${
+                  isSelected
+                    ? 'border-sky-500 text-sky-600 bg-white'
+                    : 'border-transparent text-slate-600 hover:text-sky-600'
                 }`}
               >
-                <span>{p.label}</span>
+                {p.label}
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* Main Table Section */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-        {/* L2 Classification Sub-Tabs and Meta Options */}
-        <div className="flex flex-col border-b border-slate-200/60 bg-white">
-          <div className="flex flex-col lg:flex-row items-center">
-            <div className="flex overflow-x-auto no-scrollbar w-full lg:w-auto border-b lg:border-b-0 border-slate-100 p-1">
-              <div className="flex items-center bg-slate-50 p-1 rounded-lg gap-0.5">
-                {tabs.map((tab) => {
-                  const isSelected = activeTab === tab;
-                  return (
-                    <button
-                      key={tab}
-                      onClick={() => {
-                        setActiveTab(tab);
-                        setSelectedRuleIds([]);
-                        handleResetFilter();
-                      }}
-                      className={`px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-md transition-all duration-150 ${
-                        isSelected
-                          ? 'bg-white text-sky-600 shadow-sm border border-slate-250/20 font-semibold'
-                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+      {/* Row 4: 二级 Tab + 功能按钮 */}
+        <div className="px-4 py-2.5 border-b border-slate-200 flex flex-col lg:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full lg:w-auto">
+            {tabs.map((tab) => {
+              const isSelected = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setSelectedRuleIds([]);
+                    handleResetFilter();
+                  }}
+                  className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all duration-150 border cursor-pointer ${
+                    isSelected
+                      ? 'border-sky-500 text-sky-600 bg-white'
+                      : 'border-slate-200 text-slate-600 bg-white hover:border-sky-300 hover:text-sky-600'
+                  }`}
+                >
+                  {tab}
+                </button>
+              );
+            })}
+          </div>
 
-            <div className="ml-auto flex items-center gap-3 p-3 w-full lg:w-auto justify-end border-t lg:border-t-0 border-slate-100">
+          <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
             <button
               onClick={handleOpenAdd}
               disabled={isKnownApp}
-              className={`px-3 py-1.5 border rounded-lg flex items-center justify-center gap-1.5 text-xs font-medium transition-all shadow-sm ${
+              className={`px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 text-xs font-medium transition-all border ${
                 isKnownApp
                   ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                   : 'bg-sky-500 border-sky-500 text-white hover:bg-sky-600 cursor-pointer'
@@ -2409,97 +2632,80 @@ export default function RuleManagement() {
               <span>新增应用</span>
             </button>
 
-            <button 
-              onClick={() => setShowFilterRow(!showFilterRow)}
-              className={`px-3 py-1.5 border rounded-lg flex items-center justify-center gap-1.5 text-xs font-medium transition-all cursor-pointer shadow-sm relative ${
-                showFilterRow 
-                  ? 'bg-sky-50 border-sky-300 text-sky-600' 
-                  : 'bg-white border-slate-200 text-slate-600 hover:text-sky-500 hover:bg-slate-50'
-              }`}
-              title="展现过滤栏"
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span>表格过滤</span>
-              {(appliedFilterName || appliedFilterIp || appliedFilterPort) && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-sky-500 border-2 border-white rounded-full animate-pulse" />
-              )}
-            </button>
-
-            <button
-              onClick={handleOpenBatchAdvancedConfig}
-              disabled={isKnownApp}
-              className={`px-3 py-1.5 border rounded-lg flex items-center justify-center gap-1.5 text-xs font-medium transition-all shadow-sm ${
-                isKnownApp
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'cursor-pointer bg-white border-slate-200 text-slate-600 hover:text-sky-500 hover:bg-slate-50'
-              }`}
-              title={isKnownApp ? '已知应用不支持修改配置' : '批量高级配置'}
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>批量高级配置</span>
-              {selectedRuleIds.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 border border-sky-100">{selectedRuleIds.length}</span>
-              )}
-            </button>
-            
-            <div className="h-4 w-[1px] bg-slate-200" />
-
+            {/* 批量操作 dropdown */}
             <div className="relative inline-block text-left">
-              <button 
-                onClick={() => setShowColumnDropdown(!showColumnDropdown)}
-                className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500 hover:text-sky-500 transition-colors cursor-pointer bg-white flex items-center justify-center shadow-sm"
-                title="表字段控制列"
+              <button
+                onClick={() => setShowBatchMenu(!showBatchMenu)}
+                className="px-3 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium border border-slate-200 text-slate-600 bg-white hover:border-sky-300 hover:text-sky-600 transition-all cursor-pointer"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
-                  <line x1="15" y1="8" x2="18" y2="8" />
-                  <line x1="15" y1="12" x2="18" y2="12" />
-                  <line x1="15" y1="16" x2="18" y2="16" />
-                </svg>
+                <span>批量操作</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showBatchMenu ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence>
-                {showColumnDropdown && (
+                {showBatchMenu && (
                   <>
-                    <div className="fixed inset-0 z-20 bg-transparent" onClick={() => setShowColumnDropdown(false)} />
-                    <div className="absolute right-0 mt-2 bg-white border border-slate-200 rounded-lg shadow-2xl py-2 w-48 z-30 flex flex-col gap-0.5">
-                      {configurableColumns.map((col, idx) => (
-                        <div 
-                          key={col.id}
-                          draggable
-                          onDragStart={(e) => handleColDragStart(e, idx)}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            if (colDragOverIndex !== idx) setColDragOverIndex(idx);
-                          }}
-                          onDragLeave={() => {
-                            if (colDragOverIndex === idx) setColDragOverIndex(null);
-                          }}
-                          onDrop={(e) => handleColDrop(e, idx)}
-                          className={`flex items-center gap-2 px-3 py-1.5 hover:bg-slate-100 border-y border-transparent select-none cursor-grab active:cursor-grabbing transition-colors ${
-                            colDragOverIndex === idx ? 'bg-sky-50 border-t-sky-400 border-b-sky-400' : ''
-                          }`}
-                        >
-                          <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
-                          <input 
-                            type="checkbox"
-                            checked={col.visible}
-                            onChange={() => {
-                              const updated = columns.map((c) => c.id === col.id ? { ...c, visible: !c.visible } : c);
-                              setColumns(updated);
-                            }}
-                            className="rounded border-slate-300 w-3.5 h-3.5 text-sky-500 focus:ring-sky-500 cursor-pointer"
-                          />
-                          <span className="text-xs text-slate-700 font-medium">{col.name}</span>
-                        </div>
-                      ))}
+                    <div className="fixed inset-0 z-20 bg-transparent" onClick={() => setShowBatchMenu(false)} />
+                    <div className="absolute right-0 mt-1.5 bg-white border border-slate-200 rounded-lg shadow-xl py-1 w-40 z-30">
+                      <button
+                        onClick={() => { setShowBatchMenu(false); handleOpenBatchAdvancedConfig(); }}
+                        disabled={isKnownApp}
+                        className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Wrench className="w-3.5 h-3.5 text-slate-400" />
+                        批量高级配置
+                      </button>
+                      <button
+                        onClick={() => { setShowBatchMenu(false); setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+                        className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-slate-400" />
+                        导入配置
+                      </button>
+                      <button
+                        onClick={() => { setShowBatchMenu(false); alert('已生成当前应用配置的导出文件并开始下载！'); }}
+                        className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-400" />
+                        导出配置
+                      </button>
+                      <button
+                        onClick={() => { setShowBatchMenu(false); alert('已成功下载标准应用模版 (CSV/JSON 格式)。'); }}
+                        className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <FileDown className="w-3.5 h-3.5 text-slate-400" />
+                        下载模板
+                      </button>
                     </div>
                   </>
                 )}
               </AnimatePresence>
             </div>
+
+            {/* 表格过滤 funnel */}
+            <button
+              onClick={() => setShowFilterRow(!showFilterRow)}
+              className={`p-2 rounded-md border transition-all cursor-pointer relative ${
+                showFilterRow
+                  ? 'bg-sky-50 border-sky-300 text-sky-600'
+                  : 'bg-white border-slate-200 text-slate-500 hover:text-sky-500 hover:border-sky-300'
+              }`}
+              title="表格过滤"
+            >
+              <Filter className="w-3.5 h-3.5" />
+              {(appliedFilterName || appliedFilterIp || appliedFilterPort) && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-sky-500 border border-white rounded-full" />
+              )}
+            </button>
+
+            {/* 字段控制 list */}
+            <button
+              onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+              className="p-2 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-sky-500 hover:border-sky-300 transition-all cursor-pointer"
+              title="表字段控制列"
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
           </div>
-        </div>
         </div>
 
         {/* Table */}
@@ -2550,7 +2756,7 @@ export default function RuleManagement() {
                     return <th key={col.id} className="px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[110px] min-w-[110px] max-w-[110px]">源端口</th>;
                   }
                   if (col.id === 'captureLength') {
-                    return <th key={col.id} className="px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[100px] min-w-[100px] max-w-[100px]">裁包长度</th>;
+                    return <th key={col.id} className="px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap text-center w-[100px] min-w-[100px] max-w-[100px]">载包长度</th>;
                   }
                   return null;
                 })}
@@ -2733,7 +2939,7 @@ export default function RuleManagement() {
                 return (
                 <React.Fragment key={item.id}>
                 <tr 
-                  className={`hover:bg-slate-50 group transition-all relative ${
+                  className={`group transition-all relative odd:bg-white even:bg-[#fafafa] ${
                     dragOverIndex === index ? 'bg-sky-50/40 border-t-2 border-t-sky-500' : ''
                   }`}
                   onDragOver={(e) => {
@@ -2753,7 +2959,7 @@ export default function RuleManagement() {
                     if (isKnownApp) return;
                     e.preventDefault();
                     const transferred = e.dataTransfer.getData('text/plain');
-                    if (activeTab === 'L7应用') {
+                    if (activeTab === 'L7') {
                       const srcId = parseInt(transferred, 10);
                       if (!isNaN(srcId)) {
                         reorderL7RulesByIds(srcId, item.id);
@@ -2796,7 +3002,7 @@ export default function RuleManagement() {
                                   onDragStart={(e) => {
                                     e.dataTransfer.setData(
                                       'text/plain',
-                                      activeTab === 'L7应用' ? String(item.id) : String(index)
+                                      activeTab === 'L7' ? String(item.id) : String(index)
                                     );
                                     setDragOverIndex(null);
                                   }}
@@ -2827,28 +3033,15 @@ export default function RuleManagement() {
                       );
                     }
                     if (col.id === 'ruleId') {
-                      const pId = getPhysicalRuleId(item.ruleId, selectedProbe);
                       return (
                         <td key={col.id} className="px-3 py-2.5 whitespace-nowrap text-center w-[88px] min-w-[88px] max-w-[88px]">
-                          {selectedProbe === '所有接口' ? (
-                            <div className="flex justify-center">
-                              <button 
-                                onClick={() => handleOpenMappingModal(item)}
-                                className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded transition-all cursor-pointer inline-flex items-center justify-center border border-sky-100/50 animate-none"
-                                title="多接口RuleID映射"
-                              >
-                                <FileText className="w-4 h-4 text-sky-505" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span 
-                              onMouseEnter={(e) => showTooltip(pId, e)}
-                              onMouseLeave={hideTooltip}
-                              className="font-mono bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded text-slate-700 text-xs transition-colors inline-block max-w-[78px] truncate cursor-help"
-                            >
-                              {pId}
-                            </span>
-                          )}
+                          <span
+                            onMouseEnter={(e) => showTooltip(item.ruleId, e)}
+                            onMouseLeave={hideTooltip}
+                            className="font-mono text-slate-700 text-xs inline-block max-w-[78px] truncate cursor-help"
+                          >
+                            {item.ruleId}
+                          </span>
                         </td>
                       );
                     }
@@ -3005,7 +3198,7 @@ export default function RuleManagement() {
                 );
               })}
               {/* Fill with empty rows to maintain height */}
-              {activeTab !== 'L7应用' && Array.from({ length: Math.max(0, 15 - displayedTableData.length) }).map((_, idx) => (
+              {activeTab !== 'L7' && Array.from({ length: Math.max(0, 15 - displayedTableData.length) }).map((_, idx) => (
                 <tr key={`empty-${idx}`} className="h-[41px]">
                   <td className="px-4 py-2.5 w-[45px] min-w-[45px] max-w-[45px] text-center"><div className="w-4 h-4 rounded border border-slate-100 opacity-0 mx-auto"></div></td>
                   <td className="px-4 py-2.5" colSpan={tableColumns.length + 1}></td>
@@ -3016,34 +3209,27 @@ export default function RuleManagement() {
         </div>
 
         {/* Footer Pagination */}
-        {activeTab === 'L7应用' ? (
-          <div className="px-4 py-3 bg-white border-t border-slate-100 flex items-center justify-end text-xs text-slate-500">
+        {activeTab === 'L7' ? (
+          <div className="px-4 py-3 bg-white border-t border-slate-200 flex items-center justify-end text-xs text-slate-500">
             共 {filteredTableData.length} 条 L7 应用，各协议组独立分页
           </div>
         ) : (
-        <div className="px-4 py-3 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2">
-                <span>每页显示条数</span>
-                <select className="border border-slate-200 rounded px-1.5 py-1 bg-white outline-none">
-                  <option>15</option>
-                  <option>30</option>
-                  <option>50</option>
-                  <option>100</option>
-                </select>
-             </div>
-             <div className="flex items-center gap-2">
-                <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
-                <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
-                <span>第</span>
-                <input type="text" value="1" className="w-10 border border-slate-200 rounded px-1 py-0.5 text-center outline-none" readOnly />
-                <span>共 1 页</span>
-                <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5" /></button>
-                <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5" /></button>
-                 <RotateCcw className="w-3.5 h-3.5 ml-2 cursor-pointer text-sky-500" />
-              </div>
-           </div>
-           <div>显示记录从1到{filteredTableData.length}, 总数 {filteredTableData.length} 条</div>
+        <div className="px-4 py-3 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+          <span>本页记录从 1 到 {filteredTableData.length}, 总数 {filteredTableData.length} 条</span>
+          <div className="flex items-center gap-3">
+            <select className="border border-slate-200 rounded px-1.5 py-1 bg-white outline-none">
+              <option>100条/页</option>
+              <option>50条/页</option>
+              <option>30条/页</option>
+              <option>15条/页</option>
+            </select>
+            <div className="flex items-center gap-1">
+              <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5 rotate-180" /></button>
+              <button className="w-6 h-6 bg-sky-500 text-white rounded text-xs">1</button>
+              <button className="p-1 rounded hover:bg-slate-100"><ChevronRight className="w-3.5 h-3.5" /></button>
+            </div>
+            <span className="flex items-center gap-1">前往 <input type="text" value="1" className="w-8 border border-slate-200 rounded px-1 py-0.5 text-center outline-none" readOnly /> 页</span>
+          </div>
         </div>
         )}
       </div>
@@ -3300,7 +3486,7 @@ export default function RuleManagement() {
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                     />
 
-                    {activeTab === 'L7应用' && (
+                    {activeTab === 'L7' && (
                       <>
                         <label className="text-slate-600 text-right pr-4">L7协议</label>
                         <select
@@ -3326,7 +3512,7 @@ export default function RuleManagement() {
                       </>
                     )}
 
-                    {activeTab === 'IP应用' && (
+                    {activeTab === 'IP协议' && (
                       <>
                         <label className="text-slate-600 text-right pr-4">协议</label>
                         <select
@@ -3483,15 +3669,15 @@ export default function RuleManagement() {
 
                     <label className="text-slate-600 text-right pr-4 self-start pt-2">应用定义</label>
                     <div className="space-y-4">
-                      {protocol === '混栈应用' && (
+                      {protocol === '混线应用' && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
                           混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址。
                         </div>
                       )}
-                      {(activeTab === 'IP应用'
+                      {(activeTab === 'IP协议'
                         ? [
-                            { key: 'srcIp', title: '源IP组', placeholder: protocol === '混栈应用' ? '输入源IP，支持 IPv4/IPv6' : '输入源IP，例如 192.168.1.10/24' },
-                            { key: 'dstIp', title: '目的IP组', placeholder: protocol === '混栈应用' ? '输入目的IP，支持 IPv4/IPv6' : '输入目的IP，例如 10.0.0.5' },
+                            { key: 'srcIp', title: '源IP组', placeholder: protocol === '混线应用' ? '输入源IP，支持 IPv4/IPv6' : '输入源IP，例如 192.168.1.10/24' },
+                            { key: 'dstIp', title: '目的IP组', placeholder: protocol === '混线应用' ? '输入目的IP，支持 IPv4/IPv6' : '输入目的IP，例如 10.0.0.5' },
                           ]
                         : [
                             { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
@@ -4440,6 +4626,11 @@ export default function RuleManagement() {
 
               {/* Action Buttons */}
               <div className="px-6 py-4 flex justify-center gap-4 border-t border-slate-100 bg-slate-50/50">
+                {importLimitError && (
+                  <div className="w-full mb-2 p-3 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                    {importLimitError}
+                  </div>
+                )}
                 <button 
                   onClick={() => setShowImportModal(false)}
                   className="px-6 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-650 rounded-lg text-xs font-semibold shadow-sm border border-slate-200 transition-all active:scale-95 cursor-pointer shrink-0"
@@ -4447,10 +4638,168 @@ export default function RuleManagement() {
                   取消
                 </button>
                 <button 
+                  onClick={runPreImportAnalysis}
+                  className="px-6 py-1.5 bg-white hover:bg-sky-50 text-sky-600 rounded-lg text-xs font-semibold shadow-sm border border-sky-200 transition-all active:scale-95 cursor-pointer shrink-0"
+                >
+                  预导入分析
+                </button>
+                <button 
                   onClick={handleConfirmImport}
                   className="px-6 py-1.5 bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
                 >
-                  确认
+                  确认导入
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 预导入分析报告 Modal */}
+      <AnimatePresence>
+        {showImportReportModal && importReport && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowImportReportModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative w-full max-w-3xl bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <h3 className="text-sm font-semibold text-slate-800">预导入分析报告</h3>
+                <button
+                  onClick={() => setShowImportReportModal(false)}
+                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center gap-6 text-xs">
+                <span className="text-slate-600">文件：<span className="font-semibold text-slate-800">{importedFile?.name}</span></span>
+                <span className="text-slate-600">目标接口：<span className="font-semibold text-slate-800">{importSelectedInterfaces.join(', ')}</span></span>
+                <span className="text-slate-600">总条数：<span className="font-semibold text-slate-800">{importReport.total}</span></span>
+                <span className="text-green-600">成功：<span className="font-semibold">{importReport.success}</span></span>
+                <span className="text-red-600">失败：<span className="font-semibold">{importReport.failed}</span></span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#f8fafc] text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="px-4 py-2.5 font-semibold text-slate-600">应用名称</th>
+                        <th className="px-4 py-2.5 font-semibold text-slate-600 w-[100px] text-center">结果</th>
+                        <th className="px-4 py-2.5 font-semibold text-slate-600">详情</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {importReport.rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/60">
+                          <td className="px-4 py-2.5 text-slate-700">{row.name}</td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${
+                              row.result === '成功' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                            }`}>
+                              {row.result}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500">{row.detail || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                <button
+                  onClick={() => setShowImportReportModal(false)}
+                  className="px-6 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  关闭
+                </button>
+                <button
+                  onClick={handleConfirmImport}
+                  className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  确认导入
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 导出 Excel Modal */}
+      <AnimatePresence>
+        {showExportModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowExportModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Download className="w-4 h-4 text-sky-500" />
+                  导出 Excel
+                </h3>
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-4 bg-white text-xs">
+                <div className="p-3 bg-sky-50/50 border border-sky-100 rounded text-slate-600">
+                  将导出当前筛选结果共 <span className="font-semibold text-sky-600">{exportRowCount}</span> 条应用到 Excel 文件。
+                </div>
+                <div className="grid grid-cols-[80px_1fr] items-center gap-2">
+                  <label className="text-slate-500 font-medium">文件名</label>
+                  <div className="flex items-center border border-slate-200 rounded-lg px-3 py-2 bg-white focus-within:border-sky-400 transition-all">
+                    <input
+                      type="text"
+                      value={exportFileName}
+                      onChange={(e) => setExportFileName(e.target.value)}
+                      className="flex-1 outline-none text-slate-700 text-[13px]"
+                      placeholder="请输入文件名"
+                      autoFocus
+                    />
+                    <span className="text-slate-400 pl-2 ml-2 border-l border-slate-100 whitespace-nowrap">.xls</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="px-6 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleConfirmExport}
+                  className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  确认导出
                 </button>
               </div>
             </motion.div>
@@ -4486,9 +4835,9 @@ export default function RuleManagement() {
               </button>
               <button 
                 onClick={() => moveRuleUp(activePriorityMenu.index)}
-                disabled={activeTab === 'L7应用' ? !getL7MoveMeta(activePriorityMenu.index).canUp : activePriorityMenu.index === 0}
+                disabled={activeTab === 'L7' ? !getL7MoveMeta(activePriorityMenu.index).canUp : activePriorityMenu.index === 0}
                 className={`w-full text-left px-3 py-2 hover:bg-slate-50 font-medium whitespace-nowrap flex items-center justify-between ${
-                  (activeTab === 'L7应用' ? !getL7MoveMeta(activePriorityMenu.index).canUp : activePriorityMenu.index === 0) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
+                  (activeTab === 'L7' ? !getL7MoveMeta(activePriorityMenu.index).canUp : activePriorityMenu.index === 0) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
                 }`}
               >
                 <span>上移</span>
@@ -4496,9 +4845,9 @@ export default function RuleManagement() {
               </button>
               <button 
                 onClick={() => moveRuleDown(activePriorityMenu.index)}
-                disabled={activeTab === 'L7应用' ? !getL7MoveMeta(activePriorityMenu.index).canDown : activePriorityMenu.index === filteredTableData.length - 1}
+                disabled={activeTab === 'L7' ? !getL7MoveMeta(activePriorityMenu.index).canDown : activePriorityMenu.index === filteredTableData.length - 1}
                 className={`w-full text-left px-3 py-2 hover:bg-slate-50 font-medium whitespace-nowrap flex items-center justify-between ${
-                  (activeTab === 'L7应用' ? !getL7MoveMeta(activePriorityMenu.index).canDown : activePriorityMenu.index === filteredTableData.length - 1) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
+                  (activeTab === 'L7' ? !getL7MoveMeta(activePriorityMenu.index).canDown : activePriorityMenu.index === filteredTableData.length - 1) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 cursor-pointer'
                 }`}
               >
                 <span>下移</span>

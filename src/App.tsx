@@ -4,9 +4,10 @@
  */
 
 import { useState } from 'react';
+import { Settings } from 'lucide-react';
+import TopBar from './components/TopBar';
 import LeftMiniBar from './components/LeftMiniBar';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
+import Sidebar, { getMenuItemCategory } from './components/Sidebar';
 import ProbeManagement from './components/ProbeManagement';
 import RuleManagement from './components/RuleManagement';
 
@@ -32,19 +33,44 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans selection:bg-sky-100 selection:text-sky-900 text-slate-800">
-      {/* 1. Far Left Mini Sidebar */}
-      <LeftMiniBar />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-100 font-sans selection:bg-sky-100 selection:text-sky-900 text-slate-800">
+      {/* 0. Full-width Dark Top Bar */}
+      <TopBar />
 
-      {/* 2. Main Navigation Sidebar */}
-      <Sidebar activeItem={activeItem} onSelect={setActiveItem} />
+      <div className="flex flex-1 min-h-0">
+        {/* 1. Far Left Mini Sidebar (uninterrupted, full height) */}
+        <LeftMiniBar />
 
-      {/* 3. Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header activeItem={activeItem} />
-        <main className="flex-1 overflow-y-auto no-scrollbar">
-          {renderContent()}
-        </main>
+        {/* 2. Right portion: breadcrumb bar + (sidebar + main) */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Breadcrumb Bar (spans sidebar + main content, above 管理 button) */}
+          <div className="h-10 bg-white border-b border-slate-200 flex items-center px-4 shrink-0">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
+                <Settings className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-slate-400">配置</span>
+              {getMenuItemCategory(activeItem) !== '配置' && (
+                <>
+                  <span>/</span>
+                  <span className="text-slate-400">{getMenuItemCategory(activeItem)}</span>
+                </>
+              )}
+              <span>/</span>
+              <span className="text-slate-600 font-medium">{activeItem}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-1 min-h-0">
+            {/* 3. Main Navigation Sidebar */}
+            <Sidebar activeItem={activeItem} onSelect={setActiveItem} />
+
+            {/* 4. Main Content Area */}
+            <main className="flex-1 overflow-y-auto no-scrollbar min-w-0">
+              {renderContent()}
+            </main>
+          </div>
+        </div>
       </div>
 
       {/* Floating Robot Background Helper (Visual only) */}

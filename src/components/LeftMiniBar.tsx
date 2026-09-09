@@ -4,12 +4,11 @@
  */
 
 import { 
+  ChevronsRight, 
+  Search, 
   BarChart, 
   Box, 
-  Cpu, 
   Database, 
-  LayoutDashboard, 
-  Search, 
   Shield, 
   Settings,
   Brain,
@@ -20,7 +19,7 @@ import {
 
 export default function LeftMiniBar() {
   const items = [
-    { icon: LayoutDashboard },
+    { icon: ChevronsRight },
     { icon: Search },
     { icon: BarChart },
     { icon: Box },
@@ -31,17 +30,14 @@ export default function LeftMiniBar() {
   ];
 
   return (
-    <div className="w-12 h-screen bg-[#1e293b] flex flex-col items-center py-4 gap-6 flex-shrink-0">
-      <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center mb-4">
-        <span className="text-white text-[10px] font-bold">NGPM</span>
-      </div>
+    <div className="w-12 bg-[#3c3c3c] flex flex-col items-center py-3 gap-5 flex-shrink-0 overflow-y-auto no-scrollbar">
       {items.map((item, idx) => (
         <item.icon 
           key={idx} 
           className="w-5 h-5 text-slate-400 hover:text-white cursor-pointer transition-colors" 
         />
       ))}
-      <div className="mt-auto flex flex-col gap-6 items-center">
+      <div className="mt-auto flex flex-col gap-5 items-center">
         <Menu className="w-5 h-5 text-slate-400 hover:text-white cursor-pointer" />
       </div>
     </div>
