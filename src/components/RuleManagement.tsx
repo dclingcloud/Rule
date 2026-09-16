@@ -4678,7 +4678,7 @@ export default function RuleManagement() {
                   <input 
                     id="config-file-upload" 
                     type="file" 
-                    accept=".txt,.excel,.csv,.xlsx,.xls"
+                    accept=".csv,.xlsx,.xls"
                     className="hidden" 
                     onChange={fileSelectImport}
                   />
@@ -4692,7 +4692,7 @@ export default function RuleManagement() {
                         将文件拖到此处，或 <span className="text-sky-500 hover:underline cursor-pointer">点击上传</span>
                       </div>
                       <p className="text-[10px] text-slate-400 leading-normal max-w-sm">
-                        上传文件导入规则，支持上传txt，excel和csv格式
+                        上传文件导入规则，支持 Excel 和 CSV 格式
                       </p>
                     </div>
                   ) : (
