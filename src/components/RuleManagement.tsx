@@ -648,6 +648,7 @@ export default function RuleManagement() {
   const [pendingEnableToggle, setPendingEnableToggle] = useState<{ id: number; name: string; nextEnabled: boolean } | null>(null);
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [importSelectedInterfaces, setImportSelectedInterfaces] = useState<string[]>(['Probe / Lab']);
+  const [importMode, setImportMode] = useState<'mixed' | 'single'>('mixed');
   const [importConflictStrategy, setImportConflictStrategy] = useState<'merge' | 'overwrite'>('merge');
   const [importedFile, setImportedFile] = useState<{ name: string; size: number } | null>(null);
   const [isImportProbeDropdownOpen, setIsImportProbeDropdownOpen] = useState(false);
@@ -662,10 +663,14 @@ export default function RuleManagement() {
   const [showImportReportModal, setShowImportReportModal] = useState(false);
   const [importLimitError, setImportLimitError] = useState<string | null>(null);
   const IMPORT_LIMIT = 8000;
+  const importAnalysisPassed = importReport !== null && importReport.total > 0 && importReport.failed === 0;
   // 导出弹窗
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFileName, setExportFileName] = useState('');
-  const [exportRowCount, setExportRowCount] = useState(0);
+  const [exportMode, setExportMode] = useState<'mixed' | 'single'>('mixed');
+  const [exportFormat, setExportFormat] = useState<'excel' | 'csv'>('excel');
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateMode, setTemplateMode] = useState<'mixed' | 'single'>('mixed');
 
   type DnsConfig = {
     dnsResolution: 'enabled' | 'disabled';
@@ -680,7 +685,7 @@ export default function RuleManagement() {
   const [l7ProtocolConfigs, setL7ProtocolConfigs] = useState<Record<string, DnsConfig>>({
     IPv4应用: { ...defaultDnsConfig },
     IPv6应用: { ...defaultDnsConfig },
-    混线应用: { ...defaultDnsConfig },
+    混栈应用: { ...defaultDnsConfig },
   });
 
   type EnabledFlag = 'enabled' | 'disabled';
@@ -708,7 +713,7 @@ export default function RuleManagement() {
   const [l7HttpConfigs, setL7HttpConfigs] = useState<Record<string, HttpConfig>>({
     IPv4应用: { ...defaultHttpConfig },
     IPv6应用: { ...defaultHttpConfig },
-    混线应用: { ...defaultHttpConfig },
+    混栈应用: { ...defaultHttpConfig },
   });
 
   type DbEnabledConfig<T extends string> = Record<T, EnabledFlag>;
@@ -739,7 +744,7 @@ export default function RuleManagement() {
   const [l7MysqlConfigs, setL7MysqlConfigs] = useState<Record<string, DbEnabledConfig<MysqlConfigKeys>>>({
     IPv4应用: { ...defaultMysqlConfig },
     IPv6应用: { ...defaultMysqlConfig },
-    混线应用: { ...defaultMysqlConfig },
+    混栈应用: { ...defaultMysqlConfig },
   });
 
   type OracleConfigKeys = 'oracleParsing' | 'recordSelect' | 'recordUpdate' | 'recordDelete' | 'recordInsert' | 'recordOtherSql';
@@ -758,7 +763,7 @@ export default function RuleManagement() {
   const [l7OracleConfigs, setL7OracleConfigs] = useState<Record<string, DbEnabledConfig<OracleConfigKeys>>>({
     IPv4应用: { ...defaultOracleConfig },
     IPv6应用: { ...defaultOracleConfig },
-    混线应用: { ...defaultOracleConfig },
+    混栈应用: { ...defaultOracleConfig },
   });
 
   type PgConfigKeys = 'pgParsing';
@@ -772,7 +777,7 @@ export default function RuleManagement() {
   const [l7PgConfigs, setL7PgConfigs] = useState<Record<string, DbEnabledConfig<PgConfigKeys>>>({
     IPv4应用: { ...defaultPgConfig },
     IPv6应用: { ...defaultPgConfig },
-    混线应用: { ...defaultPgConfig },
+    混栈应用: { ...defaultPgConfig },
   });
 
   type SslDetailRecord = '全记录' | '只记录错误返回码';
@@ -825,7 +830,7 @@ export default function RuleManagement() {
   const [l7SslConfigs, setL7SslConfigs] = useState<Record<string, { config: SslConfig; domainModels: SslDomainModel[] }>>({
     IPv4应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
     IPv6应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
-    混线应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
+    混栈应用: { config: { ...defaultSslConfig }, domainModels: [...defaultSslDomainModels] },
   });
 
 
@@ -881,7 +886,7 @@ export default function RuleManagement() {
 
   // Dynamic Tabs definition per prompt instructions
   const getTabs = (p: string) => {
-    if (p === '混线应用') {
+    if (p === '混栈应用') {
       // Dual-stack doesn't require "Known Applications", it has Custom (TCP/UDP) and L7 Apps. Let's support IP App as well in case they define it
       return ['自定义TCP', '自定义UDP', 'IP协议', 'L7'];
     }
@@ -1004,18 +1009,18 @@ export default function RuleManagement() {
     { id: 52, ruleId: '80002', name: 'IPv6-L7-Bilibili', protocol_type: 'TCP', port: '探针(SRV6):接口1', priority: 2, protocol: 'IPv6应用', tab: 'L7', l7Group: 'HTTP', description: '哔哩哔哩原生IPv6高画质画中画分流极速控制规则', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
     { id: 55, ruleId: '80003', name: 'IPv6-L7-Alipay', protocol_type: 'TCP', port: '探针(Retx):接口1', priority: 3, protocol: 'IPv6应用', tab: 'L7', l7Group: 'SSL', description: '支付宝金融应用原生IPv6可信网络通道保障', srcIp: 'any', srcPort: 'any', dstIp: 'any', dstPort: 'any' },
 
-    // 混线应用 (Dual Stack)
-    { id: 56, ruleId: '9201', name: 'DS-Custom-Web-Gateway', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混线应用', tab: '自定义TCP', description: '混栈入包全链路路由控制接口', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.1 / 2001:db8:200::1', dstPort: '80, 443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.1', dstIpV6: '2001:db8:200::1' },
-    { id: 57, ruleId: '9203', name: 'DS-Custom-Edge-API', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混线应用', tab: '自定义TCP', description: '节点分流混栈策略应用', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.10 / 2409:8a0e:25::10', dstPort: '8443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.10', dstIpV6: '2409:8a0e:25::10' },
-    { id: 58, ruleId: '9202', name: 'DS-Custom-NTP-Sync', protocol_type: 'UDP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: '混线应用', tab: '自定义UDP', description: '两层多时钟同步NTP网络适配', srcIp: 'any / any', srcPort: 'any', dstIp: '119.29.29.29 / 2402:f000:1:401::8', dstPort: '123', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '119.29.29.29', dstIpV6: '2402:f000:1:401::8' },
-    { id: 59, ruleId: '9204', name: 'DS-Custom-Telemetry', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: '混线应用', tab: '自定义UDP', description: '混栈高速遥测采集任务通道', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.1.5 / 2001:db8:9999::5', dstPort: '2019', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.1.5', dstIpV6: '2001:db8:9999::5' },
-    { id: 60, ruleId: '9301', name: 'DS-IP-ALL-Pass', protocol_type: 'ALL', port: '所有接口', priority: 1, protocol: '混线应用', tab: 'IP协议', description: '放行层三层四通用控制包', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 61, ruleId: '9302', name: 'DS-IP-GRE-Bridge', protocol_type: 'GRE', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混线应用', tab: 'IP协议', description: '混栈网络GRE点对点虚拟链路', srcIp: '192.168.50.1 / fe80::5001', srcPort: 'any', dstIp: '192.168.50.2 / fe80::5002', dstPort: 'any', srcIpV4: '192.168.50.1', srcIpV6: 'fe80::5001', dstIpV4: '192.168.50.2', dstIpV6: 'fe80::5002' },
-    { id: 62, ruleId: '93101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 3, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 63, ruleId: '93102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 4, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any / any', srcPort: 'any', dstIp: '224.0.0.0/4 / ff00::/8', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '224.0.0.0/4', dstIpV6: 'ff00::/8' },
-    { id: 64, ruleId: '93103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 5, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 65, ruleId: '93104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 6, protocol: '混线应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
-    { id: 66, ruleId: '9401', name: 'DS-L7-QQ-Video', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混线应用', tab: 'L7', l7Group: 'HTTP', description: 'QQ视频多媒体实时混通保障', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' }
+    // 混栈应用 (Dual Stack)
+    { id: 56, ruleId: '9201', name: 'DS-Custom-Web-Gateway', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混栈应用', tab: '自定义TCP', description: '混栈入包全链路路由控制接口', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.1 / 2001:db8:200::1', dstPort: '80, 443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.1', dstIpV6: '2001:db8:200::1' },
+    { id: 57, ruleId: '9203', name: 'DS-Custom-Edge-API', protocol_type: 'TCP', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混栈应用', tab: '自定义TCP', description: '节点分流混栈策略应用', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.0.10 / 2409:8a0e:25::10', dstPort: '8443', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.0.10', dstIpV6: '2409:8a0e:25::10' },
+    { id: 58, ruleId: '9202', name: 'DS-Custom-NTP-Sync', protocol_type: 'UDP', port: '探针(SRV6):接口1; 探针(重传):接口1', priority: 1, protocol: '混栈应用', tab: '自定义UDP', description: '两层多时钟同步NTP网络适配', srcIp: 'any / any', srcPort: 'any', dstIp: '119.29.29.29 / 2402:f000:1:401::8', dstPort: '123', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '119.29.29.29', dstIpV6: '2402:f000:1:401::8' },
+    { id: 59, ruleId: '9204', name: 'DS-Custom-Telemetry', protocol_type: 'UDP', port: '所有接口', priority: 2, protocol: '混栈应用', tab: '自定义UDP', description: '混栈高速遥测采集任务通道', srcIp: 'any / any', srcPort: 'any', dstIp: '10.200.1.5 / 2001:db8:9999::5', dstPort: '2019', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '10.200.1.5', dstIpV6: '2001:db8:9999::5' },
+    { id: 60, ruleId: '9301', name: 'DS-IP-ALL-Pass', protocol_type: 'ALL', port: '所有接口', priority: 1, protocol: '混栈应用', tab: 'IP协议', description: '放行层三层四通用控制包', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 61, ruleId: '9302', name: 'DS-IP-GRE-Bridge', protocol_type: 'GRE', port: '探针(Retx):接口1; 探针(SRV6):接口1', priority: 2, protocol: '混栈应用', tab: 'IP协议', description: '混栈网络GRE点对点虚拟链路', srcIp: '192.168.50.1 / fe80::5001', srcPort: 'any', dstIp: '192.168.50.2 / fe80::5002', dstPort: 'any', srcIpV4: '192.168.50.1', srcIpV6: 'fe80::5001', dstIpV4: '192.168.50.2', dstIpV6: 'fe80::5002' },
+    { id: 62, ruleId: '93101', name: 'ICMP (ICMP)', protocol_type: 'ICMP', port: '所有接口', priority: 3, protocol: '混栈应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：ICMP', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 63, ruleId: '93102', name: 'multicast_test (MULTICAST)', protocol_type: 'MULTICAST', port: '所有接口', priority: 4, protocol: '混栈应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：多播测试', srcIp: 'any / any', srcPort: 'any', dstIp: '224.0.0.0/4 / ff00::/8', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: '224.0.0.0/4', dstIpV6: 'ff00::/8' },
+    { id: 64, ruleId: '93103', name: 'unicast_test (UNICAST)', protocol_type: 'UNICAST', port: '所有接口', priority: 5, protocol: '混栈应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：单播测试', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 65, ruleId: '93104', name: 'ip_other', protocol_type: 'OTHER', port: '所有接口', priority: 6, protocol: '混栈应用', tab: 'IP协议', isDefaultIpApp: true, description: 'IP默认应用：其他协议流量', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' },
+    { id: 66, ruleId: '9401', name: 'DS-L7-QQ-Video', protocol_type: 'TCP', port: '所有接口', priority: 1, protocol: '混栈应用', tab: 'L7', l7Group: 'HTTP', description: 'QQ视频多媒体实时混通保障', srcIp: 'any / any', srcPort: 'any', dstIp: 'any / any', dstPort: 'any', srcIpV4: 'any', srcIpV6: 'any', dstIpV4: 'any', dstIpV6: 'any' }
   ]);
 
   // Filter variables
@@ -2015,7 +2020,7 @@ export default function RuleManagement() {
       return;
     }
 
-    if (protocol === '混线应用') {
+    if (protocol === '混栈应用') {
       const ipText = `${resolvedSrcIp} ${resolvedDstIp}`;
       const hasV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/.test(ipText);
       const hasV6 = /[a-fA-F0-9]*:[a-fA-F0-9:]+/.test(ipText);
@@ -2116,6 +2121,8 @@ export default function RuleManagement() {
         name: file.name,
         size: Math.round(file.size / 1024)
       });
+      setImportReport(null);
+      setImportLimitError(null);
     }
   };
 
@@ -2155,7 +2162,10 @@ export default function RuleManagement() {
       { name: 'Imported-API-Gateway', ruleId: '61001', type: 'TCP', srcIp: '10.0.0.0/8', srcPort: 'any', dstIp: '10.222.1.25', dstPort: '1883, 8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的API网关规则' },
       { name: 'Imported-Metrics-Engine', ruleId: '61002', type: 'UDP', srcIp: 'any', srcPort: 'any', dstIp: '172.50.10.12', dstPort: '514, 2019', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的指标引擎规则' },
     ];
-    return [...base, ...samples];
+    const failureSamples = /失败|invalid/i.test(importedFile.name)
+      ? [{ name: 'Imported-Invalid-Rule', ruleId: '61003', type: 'SCTP', srcIp: 'any', srcPort: 'any', dstIp: '', dstPort: '8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '预导入失败展示示例' }]
+      : [];
+    return [...base, ...samples, ...failureSamples];
   };
 
   // 预导入分析：在原始表格基础上增加 结果 / 详情 两列
@@ -2190,6 +2200,10 @@ export default function RuleManagement() {
   };
 
   const handleConfirmImport = () => {
+    if (!importAnalysisPassed) {
+      alert('请先完成预导入分析，并确保所有配置均分析成功。');
+      return;
+    }
     if (!importedFile) {
       alert('请先选择或拖拽要导入的配置文件！');
       return;
@@ -2247,7 +2261,7 @@ export default function RuleManagement() {
     setShowImportModal(false);
     setShowImportReportModal(false);
     setImportReport(null);
-    alert(`成功从 [${importedFile.name}] 导入 ${newRules.length} 条业务流控规则并分发到以下接口：\n${importSelectedInterfaces.join(', ')}`);
+    alert(`成功以${importMode === 'mixed' ? '混合模式' : '单一模式'}从 [${importedFile.name}] 导入 ${newRules.length} 条业务流控规则并分发到以下接口：\n${importSelectedInterfaces.join(', ')}`);
   };
 
   const handleClearAllRules = () => {
@@ -2273,6 +2287,15 @@ export default function RuleManagement() {
     { key: 'srcPortExclude', header: '源端口排除 (选填）' },
     { key: 'dstIpExclude', header: '目的IP排除 (选填）' },
     { key: 'dstPortExclude', header: '目的端口排除 (选填）' },
+    { key: 'storageLength', header: '裁包长度' },
+    { key: 'description', header: '标识/备注' },
+  ];
+
+  const SINGLE_MODE_COLUMNS = [
+    { key: 'name', header: '应用名称' },
+    { key: 'ruleId', header: '应用ID' },
+    { key: 'type', header: '类型(TCP/UDP/IP/L7)' },
+    { key: 'flowRules', header: 'TCP流规则\n(格式: 源IP@源端口 -> 目的IP@目的端口)' },
     { key: 'storageLength', header: '裁包长度' },
     { key: 'description', header: '标识/备注' },
   ];
@@ -2303,6 +2326,13 @@ export default function RuleManagement() {
         return parseExcludeFromGroup(item.dstIp);
       case 'dstPortExclude':
         return parseExcludeFromGroup(item.dstPort);
+      case 'flowRules': {
+        const srcIp = (item.srcIp || 'any').split(' | ')[0];
+        const srcPort = (item.srcPort || 'any').split(' | ')[0];
+        const dstIp = (item.dstIp || 'any').split(' | ')[0];
+        const dstPort = (item.dstPort || 'any').split(' | ')[0];
+        return `${srcIp}@${srcPort} -> ${dstIp}@${dstPort}`;
+      }
       case 'srcIp':
         return (item.srcIp || 'any').split(' | ')[0];
       case 'srcPort':
@@ -2330,6 +2360,15 @@ export default function RuleManagement() {
     return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table>${thead}${tbody}</table></body></html>`;
   };
 
+  const buildCsv = (rows: any[], columns: typeof EXPORT_COLUMNS) => {
+    const escapeCsvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const header = columns.map((column) => escapeCsvCell(column.header)).join(',');
+    const body = rows.map((row) =>
+      columns.map((column) => escapeCsvCell(getExportCellValue(row, column.key))).join(',')
+    ).join('\r\n');
+    return `\uFEFF${header}\r\n${body}`;
+  };
+
   const downloadBlob = (content: string, filename: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -2349,9 +2388,10 @@ export default function RuleManagement() {
       return;
     }
     // 打开导出弹窗，让用户重命名文件
-    const defaultName = `应用配置_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`;
+    const defaultName = `混合模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`;
     setExportFileName(defaultName);
-    setExportRowCount(rows.length);
+    setExportMode('mixed');
+    setExportFormat('excel');
     setShowExportModal(true);
   };
 
@@ -2366,35 +2406,50 @@ export default function RuleManagement() {
       alert('请输入导出文件名。');
       return;
     }
-    const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
-    const filename = safeName.endsWith('.xls') ? safeName : `${safeName}.xls`;
-    const html = buildExcelHtml(rows, EXPORT_COLUMNS);
-    downloadBlob(html, filename, 'application/vnd.ms-excel');
+    const safeName = name.replace(/[\/:*?"<>|]/g, '_').replace(/\.(xls|csv)$/i, '');
+    const columns = exportMode === 'mixed' ? EXPORT_COLUMNS : SINGLE_MODE_COLUMNS;
+    const isExcel = exportFormat === 'excel';
+    const filename = `${safeName}.${isExcel ? 'xls' : 'csv'}`;
+    const content = isExcel ? buildExcelHtml(rows, columns) : buildCsv(rows, columns);
+    const mime = isExcel ? 'application/vnd.ms-excel' : 'text/csv;charset=utf-8';
+    downloadBlob(content, filename, mime);
     setShowExportModal(false);
-    alert(`已导出 ${rows.length} 条应用到 Excel 文件：${filename}`);
+    alert(`已以${exportMode === 'mixed' ? '混合模式' : '单一模式'}导出 ${rows.length} 条应用到 ${isExcel ? 'Excel' : 'CSV'} 文件：${filename}`);
   };
 
   const handleDownloadTemplate = () => {
-    // 模版：仅表头 + 一行示例，示例取值与 UI 一致
-    const sample = {
-      name: '示例应用',
-      ruleId: '10001',
-      type: 'TCP',
-      srcIp: '192.168.1.0/24',
-      srcPort: 'any',
-      dstIp: '10.0.0.5',
-      dstPort: '80, 443',
-      srcIpExclude: '',
-      srcPortExclude: '',
-      dstIpExclude: '',
-      dstPortExclude: '',
-      storageLength: '128字节',
-      description: '示例应用描述',
-    };
-    const html = buildExcelHtml([sample], EXPORT_COLUMNS);
-    const filename = `应用配置_导入模版_${new Date().toISOString().slice(0, 10)}.xls`;
+    const isMixedMode = templateMode === 'mixed';
+    const sample = isMixedMode
+      ? {
+          name: '示例应用',
+          ruleId: '10001',
+          type: 'TCP',
+          srcIp: '192.168.1.0/24',
+          srcPort: 'any',
+          dstIp: '10.0.0.5',
+          dstPort: '80, 443',
+          srcIpExclude: '',
+          srcPortExclude: '',
+          dstIpExclude: '',
+          dstPortExclude: '',
+          storageLength: '128字节',
+          description: '示例应用描述',
+        }
+      : {
+          name: 'Web门户应用',
+          ruleId: '10001',
+          type: 'TCP',
+          flowRules: '1.1.1.1@1234 -> 2.2.2.2@2345; 11:22:33::1@1234 -> 22:33:44::1@3456',
+          storageLength: '128字节',
+          description: '多组四元组配置示例',
+        };
+    const columns = isMixedMode ? EXPORT_COLUMNS : SINGLE_MODE_COLUMNS;
+    const html = buildExcelHtml([sample], columns);
+    const modeName = isMixedMode ? '混合模式应用' : '单一模式应用';
+    const filename = `${modeName}_导入模版_${new Date().toISOString().slice(0, 10)}.xls`;
     downloadBlob(html, filename, 'application/vnd.ms-excel');
-    alert(`已下载应用配置导入模版：${filename}`);
+    setShowTemplateModal(false);
+    alert(`已下载${modeName}导入模版：${filename}`);
   };
 
   const handleOpenL7GroupSettings = (group: string) => {
@@ -2538,7 +2593,7 @@ export default function RuleManagement() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+              onClick={() => { setImportedFile(null); setImportMode('mixed'); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
               className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-sky-500" />
@@ -2552,7 +2607,7 @@ export default function RuleManagement() {
               <span>导出</span>
             </button>
             <button
-              onClick={handleDownloadTemplate}
+              onClick={() => { setTemplateMode('mixed'); setShowTemplateModal(true); }}
               className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <FileDown className="w-3.5 h-3.5 text-sky-500" />
@@ -2573,7 +2628,7 @@ export default function RuleManagement() {
           {[
             { id: 'IPv4应用', label: 'IPv4应用' },
             { id: 'IPv6应用', label: 'IPv6应用' },
-            { id: '混线应用', label: '混线应用' },
+            { id: '混栈应用', label: '混栈应用' },
           ].map((p) => {
             const isSelected = protocol === p.id;
             return (
@@ -2655,7 +2710,7 @@ export default function RuleManagement() {
                         批量高级配置
                       </button>
                       <button
-                        onClick={() => { setShowBatchMenu(false); setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+                        onClick={() => { setShowBatchMenu(false); setImportedFile(null); setImportMode('mixed'); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
                         className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                       >
                         <Upload className="w-3.5 h-3.5 text-slate-400" />
@@ -3669,15 +3724,15 @@ export default function RuleManagement() {
 
                     <label className="text-slate-600 text-right pr-4 self-start pt-2">应用定义</label>
                     <div className="space-y-4">
-                      {protocol === '混线应用' && (
+                      {protocol === '混栈应用' && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
                           混栈应用规则要求：源/目的IP中需至少同时包含一组 <strong>IPv4 + IPv6</strong> 地址。
                         </div>
                       )}
                       {(activeTab === 'IP协议'
                         ? [
-                            { key: 'srcIp', title: '源IP组', placeholder: protocol === '混线应用' ? '输入源IP，支持 IPv4/IPv6' : '输入源IP，例如 192.168.1.10/24' },
-                            { key: 'dstIp', title: '目的IP组', placeholder: protocol === '混线应用' ? '输入目的IP，支持 IPv4/IPv6' : '输入目的IP，例如 10.0.0.5' },
+                            { key: 'srcIp', title: '源IP组', placeholder: protocol === '混栈应用' ? '输入源IP，支持 IPv4/IPv6' : '输入源IP，例如 192.168.1.10/24' },
+                            { key: 'dstIp', title: '目的IP组', placeholder: protocol === '混栈应用' ? '输入目的IP，支持 IPv4/IPv6' : '输入目的IP，例如 10.0.0.5' },
                           ]
                         : [
                             { key: 'srcIp', title: '源IP组', placeholder: '输入源IP，例如 192.168.1.10/24' },
@@ -4495,6 +4550,7 @@ export default function RuleManagement() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setImportSelectedInterfaces(prev => prev.filter(i => i !== item));
+                                setImportReport(null);
                               }}
                               className="text-slate-400 hover:text-red-500 font-bold ml-1 text-[13px] leading-none cursor-pointer"
                             >
@@ -4525,6 +4581,7 @@ export default function RuleManagement() {
                                     } else {
                                       setImportSelectedInterfaces(prev => [...prev, item]);
                                     }
+                                    setImportReport(null);
                                   }}
                                   className="px-3 py-1.5 text-left hover:bg-slate-50 flex items-center justify-between cursor-pointer text-slate-700 font-semibold select-none text-[11px]"
                                 >
@@ -4540,6 +4597,44 @@ export default function RuleManagement() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-[90px_1fr] items-center gap-2">
+                  <label className="font-semibold text-xs text-slate-500">模式</label>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
+                      <input
+                        type="radio"
+                        name="importMode"
+                        checked={importMode === 'mixed'}
+                        onChange={() => { setImportMode('mixed'); setImportReport(null); }}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">混合模式</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
+                      <input
+                        type="radio"
+                        name="importMode"
+                        checked={importMode === 'single'}
+                        onChange={() => { setImportMode('single'); setImportReport(null); }}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">单一模式</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 {/* 同名规则导入 field */}
                 <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                   <label className="text-slate-550 font-medium font-semibold text-xs text-slate-500">同名规则导入</label>
@@ -4549,7 +4644,7 @@ export default function RuleManagement() {
                         type="radio" 
                         name="conflictStrategy" 
                         checked={importConflictStrategy === 'merge'}
-                        onChange={() => setImportConflictStrategy('merge')}
+                        onChange={() => { setImportConflictStrategy('merge'); setImportReport(null); }}
                         className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
                       />
                       <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">合并配置</span>
@@ -4559,7 +4654,7 @@ export default function RuleManagement() {
                         type="radio" 
                         name="conflictStrategy" 
                         checked={importConflictStrategy === 'overwrite'}
-                        onChange={() => setImportConflictStrategy('overwrite')}
+                        onChange={() => { setImportConflictStrategy('overwrite'); setImportReport(null); }}
                         className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
                       />
                       <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">覆盖配置</span>
@@ -4612,7 +4707,7 @@ export default function RuleManagement() {
                           </div>
                         </div>
                         <button 
-                          onClick={() => setImportedFile(null)}
+                          onClick={() => { setImportedFile(null); setImportReport(null); setImportLimitError(null); }}
                           className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-550 rounded-full transition-colors shrink-0 cursor-pointer absolute top-2 right-2 flex items-center justify-center"
                           title="移除文件"
                         >
@@ -4643,12 +4738,14 @@ export default function RuleManagement() {
                 >
                   预导入分析
                 </button>
-                <button 
-                  onClick={handleConfirmImport}
-                  className="px-6 py-1.5 bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
-                >
-                  确认导入
-                </button>
+                {importAnalysisPassed && (
+                  <button 
+                    onClick={handleConfirmImport}
+                    className="px-6 py-1.5 bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
+                  >
+                    确认导入
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>
@@ -4701,19 +4798,27 @@ export default function RuleManagement() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {importReport.rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/60">
-                          <td className="px-4 py-2.5 text-slate-700">{row.name}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-medium ${
-                              row.result === '成功' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-                            }`}>
-                              {row.result}
-                            </span>
+                      {importReport.failed === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400">
+                            无失败详情
                           </td>
-                          <td className="px-4 py-2.5 text-slate-500">{row.detail || '—'}</td>
                         </tr>
-                      ))}
+                      ) : (
+                        importReport.rows
+                          .filter((row) => row.result === '失败')
+                          .map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/60">
+                              <td className="px-4 py-2.5 text-slate-700">{row.name}</td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-red-50 text-red-600">
+                                  {row.result}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-500">{row.detail || '—'}</td>
+                            </tr>
+                          ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -4726,11 +4831,102 @@ export default function RuleManagement() {
                 >
                   关闭
                 </button>
+                {importAnalysisPassed && (
+                  <button
+                    onClick={handleConfirmImport}
+                    className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
+                  >
+                    确认导入
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 导入模版下载 Modal */}
+      <AnimatePresence>
+        {showTemplateModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowTemplateModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <FileDown className="w-4 h-4 text-sky-500" />
+                  下载导入模版
+                </h3>
                 <button
-                  onClick={handleConfirmImport}
+                  onClick={() => setShowTemplateModal(false)}
+                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-4 bg-white text-xs">
+                <div className="grid grid-cols-[80px_1fr] items-start gap-2">
+                  <label className="text-slate-500 font-medium pt-0.5">模版类型</label>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group w-fit">
+                      <input
+                        type="radio"
+                        name="templateMode"
+                        checked={templateMode === 'mixed'}
+                        onChange={() => setTemplateMode('mixed')}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">混合模式应用</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group w-fit">
+                      <input
+                        type="radio"
+                        name="templateMode"
+                        checked={templateMode === 'single'}
+                        onChange={() => setTemplateMode('single')}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">单一模式应用</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+                <button
+                  onClick={() => setShowTemplateModal(false)}
+                  className="px-6 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleDownloadTemplate}
                   className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
                 >
-                  确认导入
+                  下载模版
                 </button>
               </div>
             </motion.div>
@@ -4758,7 +4954,7 @@ export default function RuleManagement() {
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
                 <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                   <Download className="w-4 h-4 text-sky-500" />
-                  导出 Excel
+                  导出应用
                 </h3>
                 <button
                   onClick={() => setShowExportModal(false)}
@@ -4769,21 +4965,74 @@ export default function RuleManagement() {
               </div>
 
               <div className="px-6 py-5 space-y-4 bg-white text-xs">
-                <div className="p-3 bg-sky-50/50 border border-sky-100 rounded text-slate-600">
-                  将导出当前筛选结果共 <span className="font-semibold text-sky-600">{exportRowCount}</span> 条应用到 Excel 文件。
+                <div className="grid grid-cols-[80px_1fr] items-center gap-2">
+                  <label className="text-slate-500 font-medium">应用模式</label>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
+                      <input
+                        type="radio"
+                        name="exportMode"
+                        checked={exportMode === 'mixed'}
+                        onChange={() => {
+                          setExportMode('mixed');
+                          setExportFileName(`混合模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`);
+                        }}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">混合模式</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
+                      <input
+                        type="radio"
+                        name="exportMode"
+                        checked={exportMode === 'single'}
+                        onChange={() => {
+                          setExportMode('single');
+                          setExportFileName(`单一模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`);
+                        }}
+                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">单一模式</span>
+                      <Info
+                        onClick={(e) => e.preventDefault()}
+                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
+                        onMouseLeave={hideTooltip}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="grid grid-cols-[80px_1fr] items-center gap-2">
                   <label className="text-slate-500 font-medium">文件名</label>
-                  <div className="flex items-center border border-slate-200 rounded-lg px-3 py-2 bg-white focus-within:border-sky-400 transition-all">
-                    <input
-                      type="text"
-                      value={exportFileName}
-                      onChange={(e) => setExportFileName(e.target.value)}
-                      className="flex-1 outline-none text-slate-700 text-[13px]"
-                      placeholder="请输入文件名"
-                      autoFocus
-                    />
-                    <span className="text-slate-400 pl-2 ml-2 border-l border-slate-100 whitespace-nowrap">.xls</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex min-w-0 flex-1 items-center border border-slate-200 rounded-lg px-3 py-2 bg-white focus-within:border-sky-400 transition-all">
+                      <input
+                        type="text"
+                        value={exportFileName}
+                        onChange={(e) => setExportFileName(e.target.value)}
+                        className="min-w-0 flex-1 outline-none text-slate-700 text-[13px]"
+                        placeholder="请输入文件名"
+                        autoFocus
+                      />
+                      <span className="text-slate-400 pl-2 ml-2 border-l border-slate-100 whitespace-nowrap">
+                        .{exportFormat === 'excel' ? 'xls' : 'csv'}
+                      </span>
+                    </div>
+                    <select
+                      value={exportFormat}
+                      onChange={(event) => setExportFormat(event.target.value as 'excel' | 'csv')}
+                      aria-label="导出格式"
+                      className="h-[34px] shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 cursor-pointer"
+                    >
+                      <option value="excel">Excel</option>
+                      <option value="csv">CSV</option>
+                    </select>
                   </div>
                 </div>
               </div>
