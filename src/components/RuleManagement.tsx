@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import templateCsv from '../../模版下载.csv?raw';
 
 const PROBE_OPTIONS = [
   { value: '探针(Retx):接口1', label: '探针(Retx):接口1' },
@@ -158,7 +159,6 @@ const PROBE_SOURCE_OPTIONS = [
 
 const INTERFACE_OPTIONS = [
   { value: 'Shanghai DC/Interface 1', label: 'Shanghai DC/Interface 1' },
-  { value: '所有接口', label: '所有接口' },
   { value: '探针(Retx):接口1', label: '探针(Retx):接口1' },
   { value: '探针(SRV6):接口1', label: '探针(SRV6):接口1' },
   { value: '探针(重传):接口1', label: '探针(重传):接口1' },
@@ -628,7 +628,7 @@ export default function RuleManagement() {
   const L7_GROUP_PAGE_SIZE = 15;
   const [probeSourceType, setProbeSourceType] = useState('实时探针接口');
   const [selectedProbe, setSelectedProbe] = useState('探针(Retx):接口1');
-  const [selectedInterface, setSelectedInterface] = useState('Shanghai DC/Interface 1');
+  const [selectedInterface, setSelectedInterface] = useState('探针(Retx):接口1');
   const [showBatchMenu, setShowBatchMenu] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
@@ -648,7 +648,6 @@ export default function RuleManagement() {
   const [pendingEnableToggle, setPendingEnableToggle] = useState<{ id: number; name: string; nextEnabled: boolean } | null>(null);
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [importSelectedInterfaces, setImportSelectedInterfaces] = useState<string[]>(['Probe / Lab']);
-  const [importMode, setImportMode] = useState<'mixed' | 'single'>('mixed');
   const [importConflictStrategy, setImportConflictStrategy] = useState<'merge' | 'overwrite'>('merge');
   const [importedFile, setImportedFile] = useState<{ name: string; size: number } | null>(null);
   const [isImportProbeDropdownOpen, setIsImportProbeDropdownOpen] = useState(false);
@@ -662,15 +661,8 @@ export default function RuleManagement() {
   } | null>(null);
   const [showImportReportModal, setShowImportReportModal] = useState(false);
   const [importLimitError, setImportLimitError] = useState<string | null>(null);
-  const IMPORT_LIMIT = 8000;
+  const IMPORT_LIMIT = 10000;
   const importAnalysisPassed = importReport !== null && importReport.total > 0 && importReport.failed === 0;
-  // 导出弹窗
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFileName, setExportFileName] = useState('');
-  const [exportMode, setExportMode] = useState<'mixed' | 'single'>('mixed');
-  const [exportFormat, setExportFormat] = useState<'excel' | 'csv'>('excel');
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [templateMode, setTemplateMode] = useState<'mixed' | 'single'>('mixed');
 
   type DnsConfig = {
     dnsResolution: 'enabled' | 'disabled';
@@ -895,10 +887,10 @@ export default function RuleManagement() {
 
   const tabs = getTabs(protocol);
   const isKnownApp = activeTab.startsWith('已知');
-  const l7GroupOptions = ['DNS(TCP)', 'DNS(UDP)', 'HTTP', 'SSL', 'Oracle', 'MySQL', 'PostgreSQL'];
+  const l7GroupOptions = ['DNS(UDP)', 'DNS(TCP)', 'FTP', 'HTTP', 'MODBUS', 'MySQL', 'Oracle', 'POP3', 'PostgreSQL', 'SMB(TCP)', 'SMB(UDP)', 'SMTP', 'SSL'];
   const isDnsL7Group = (group: string) => group === 'DNS(TCP)' || group === 'DNS(UDP)' || group === 'DNS';
   const getTransportByL7Group = (group: string) => {
-    if (group === 'DNS(UDP)') return 'UDP';
+    if (group === 'DNS(UDP)' || group === 'SMB(UDP)') return 'UDP';
     return 'TCP';
   };
   const getL7GroupOptionsForForm = (current: string) => {
@@ -909,7 +901,15 @@ export default function RuleManagement() {
   };
   const l7GroupsWithSettings = (group: string) =>
     isDnsL7Group(group) || ['HTTP', 'MySQL', 'Oracle', 'PostgreSQL', 'SSL'].includes(group);
-  const ipProtocolOptions = ['ICMP', 'IGMP', 'ESP', 'AH', 'EIGRP', 'OSPF', 'UNICAST', 'MULTICAST', 'ALL'];
+  const ipProtocolOptions = ['ICMP', 'IGMP', 'GRE', 'ESP', 'AH', 'EIGRP', 'OSPF', 'UNICAST', 'MULTICAST', 'ALL'];
+  const normalizeCsvProtocolType = (value: string) => {
+    const trimmed = value.trim();
+    const transportType = ['TCP', 'UDP'].find((option) => option === trimmed.toUpperCase());
+    if (transportType) return transportType;
+    return [...ipProtocolOptions, ...l7GroupOptions].find(
+      (option) => option.toUpperCase() === trimmed.toUpperCase()
+    ) || '';
+  };
   const ICMP_EVENT_RECORD_OPTIONS = ['关键错误', '所有类型', '关闭'] as const;
   const isIcmpProtocolType = (protocolType: string) =>
     protocolType === 'ICMP' || protocolType === 'ICMPV6';
@@ -2138,19 +2138,24 @@ export default function RuleManagement() {
     }
   };
 
-  // 解析导入文件（模拟）：按模版 13 列格式解析
-  // 模版列：应用名称 | 应用ID | 类型(TCP/UDP/IP/L7) | 源IP | 源端口 | 目的IP | 目的端口 | 源IP排除(选填) | 源端口排除(选填) | 目的IP排除(选填) | 目的端口排除(选填) | 裁包长度 | 标识/备注
+  const normalizeImportedMultiValue = (value: string | undefined) =>
+    (value || '').split(';').map((item) => item.trim()).filter(Boolean).join(', ');
+
+  const formatCsvMultiValue = (value: string | undefined) =>
+    (value || '').split(',').map((item) => item.trim()).filter(Boolean).join(';');
+
+  // 解析导入文件（模拟）：导出回导文件包含应用ID，下载模板不包含应用ID
   const parseImportFile = () => {
     if (!importedFile) return [];
     // 模拟从 Excel 中解析出的规则行（此处用当前筛选结果 + 若干示例模拟）
     const base = filteredTableData.slice(0, 3).map((r) => ({
-      name: r.name || '',
       ruleId: r.ruleId || '',
-      type: r.tab === 'L7' ? 'L7' : (r.tab === 'IP协议' ? 'IP' : (r.protocol_type || '')),
-      srcIp: (r.srcIp || 'any').split(' | ')[0],
-      srcPort: (r.srcPort || 'any').split(' | ')[0],
-      dstIp: (r.dstIp || 'any').split(' | ')[0],
-      dstPort: (r.dstPort || 'any').split(' | ')[0],
+      name: r.name || '',
+      type: r.tab === 'L7' ? (r.l7Group || '') : (r.protocol_type || ''),
+      srcIp: formatCsvMultiValue((r.srcIp || 'any').split(' | ')[0]),
+      srcPort: formatCsvMultiValue((r.srcPort || 'any').split(' | ')[0]),
+      dstIp: formatCsvMultiValue((r.dstIp || 'any').split(' | ')[0]),
+      dstPort: formatCsvMultiValue((r.dstPort || 'any').split(' | ')[0]),
       srcIpExclude: parseExcludeFromGroup(r.srcIp),
       srcPortExclude: parseExcludeFromGroup(r.srcPort),
       dstIpExclude: parseExcludeFromGroup(r.dstIp),
@@ -2159,11 +2164,11 @@ export default function RuleManagement() {
       description: r.description || '',
     }));
     const samples = [
-      { name: 'Imported-API-Gateway', ruleId: '61001', type: 'TCP', srcIp: '10.0.0.0/8', srcPort: 'any', dstIp: '10.222.1.25', dstPort: '1883, 8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的API网关规则' },
-      { name: 'Imported-Metrics-Engine', ruleId: '61002', type: 'UDP', srcIp: 'any', srcPort: 'any', dstIp: '172.50.10.12', dstPort: '514, 2019', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的指标引擎规则' },
+      { ruleId: '', name: 'Imported-API-Gateway', type: 'TCP', srcIp: '10.0.0.0/8', srcPort: '', dstIp: '10.222.1.25', dstPort: '1883;8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的API网关规则' },
+      { ruleId: '', name: 'Imported-Metrics-Engine', type: 'UDP', srcIp: '', srcPort: '', dstIp: '172.50.10.12', dstPort: '514;2019', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '导入的指标引擎规则' },
     ];
     const failureSamples = /失败|invalid/i.test(importedFile.name)
-      ? [{ name: 'Imported-Invalid-Rule', ruleId: '61003', type: 'SCTP', srcIp: 'any', srcPort: 'any', dstIp: '', dstPort: '8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '预导入失败展示示例' }]
+      ? [{ ruleId: '', name: 'Imported-Invalid-Rule', type: 'SCTP', srcIp: '', srcPort: '', dstIp: '', dstPort: '8080', srcIpExclude: '', srcPortExclude: '', dstIpExclude: '', dstPortExclude: '', storageLength: '128字节', description: '预导入失败展示示例' }]
       : [];
     return [...base, ...samples, ...failureSamples];
   };
@@ -2184,12 +2189,36 @@ export default function RuleManagement() {
       if (!name.trim()) {
         return { name: '(未命名)', result: '失败' as const, detail: '应用名称为空' };
       }
-      const type = (row.type || '').toUpperCase();
-      if (!['TCP', 'UDP', 'IP', 'L7'].includes(type)) {
-        return { name, result: '失败' as const, detail: '类型字段需填写 TCP/UDP/IP/L7' };
+      const type = normalizeCsvProtocolType(row.type || '');
+      if (!type) {
+        return { name, result: '失败' as const, detail: '协议类型不在允许范围内' };
       }
-      if (!row.dstIp) {
-        return { name, result: '失败' as const, detail: '目的IP为空' };
+      const multiValueFields = [
+        row.srcIp,
+        row.srcPort,
+        row.dstIp,
+        row.dstPort,
+        row.srcIpExclude,
+        row.srcPortExclude,
+        row.dstIpExclude,
+        row.dstPortExclude,
+      ];
+      if (multiValueFields.some((value) => (value || '').includes(','))) {
+        return { name, result: '失败' as const, detail: 'IP、端口及排除字段的多个值必须使用英文分号分隔' };
+      }
+      const ruleId = (row.ruleId || '').trim();
+      if (ruleId) {
+        if (!/^[1-9]\d*$/.test(ruleId)) {
+          return { name, result: '失败' as const, detail: `应用ID必须为正整数：${ruleId}` };
+        }
+        const originalExists = allRules.some((rule) => rule.ruleId === ruleId);
+        if (!originalExists) {
+          return { name, result: '失败' as const, detail: `应用ID不存在或无权更新：${ruleId}` };
+        }
+        const targetNameOccupied = allRules.some((rule) => rule.name === name && rule.ruleId !== ruleId);
+        if (targetNameOccupied) {
+          return { name, result: '失败' as const, detail: `应用名称已被其他应用占用：${name}` };
+        }
       }
       return { name, result: '成功' as const, detail: '' };
     });
@@ -2213,23 +2242,32 @@ export default function RuleManagement() {
       return;
     }
     const rows = parseImportFile();
-    // 单探针总导入上限 8000 条
-    const currentCount = allRules.filter((r) => r.protocol === protocol && r.tab === activeTab).length;
-    if (currentCount + rows.length > IMPORT_LIMIT) {
-      setImportLimitError(`导入失败：当前 ${protocol}/${activeTab} 已有 ${currentCount} 条，本次将导入 ${rows.length} 条，合计 ${currentCount + rows.length} 条，超过单探针总导入上限 ${IMPORT_LIMIT} 条。`);
+    const exceededInterface = importSelectedInterfaces.find((targetInterface) => {
+      const currentCount = allRules.filter((rule) => ruleBoundToProbe(rule.port || '', targetInterface)).length;
+      const addedCount = rows.filter((row) => {
+        const existingRule = row.ruleId ? allRules.find((rule) => rule.ruleId === row.ruleId) : undefined;
+        return !existingRule || !ruleBoundToProbe(existingRule.port || '', targetInterface);
+      }).length;
+      return currentCount + addedCount > IMPORT_LIMIT;
+    });
+    if (exceededInterface) {
+      const currentCount = allRules.filter((rule) => ruleBoundToProbe(rule.port || '', exceededInterface)).length;
+      setImportLimitError(`导入失败：${exceededInterface} 当前已有 ${currentCount} 条规则，本次导入后将超过单个探针 ${IMPORT_LIMIT} 条的上限。`);
       return;
     }
     setImportLimitError(null);
 
     const preId = Math.max(...allRules.map(r => r.id), 0);
-    const newRules = rows.map((row, idx) => {
-      const type = (row.type || '').toUpperCase();
-      // 类型映射：TCP/UDP -> protocol_type；IP -> IP协议 tab；L7 -> L7 tab
-      const resolvedTab = type === 'L7' ? 'L7' : (type === 'IP' ? 'IP协议' : activeTab);
-      const resolvedProtocolType = type === 'L7' ? 'TCP' : (type === 'IP' ? 'ICMP' : (type || 'TCP'));
+    const importedRules = rows.map((row, idx) => {
+      const type = normalizeCsvProtocolType(row.type || '');
+      const existingRule = row.ruleId ? allRules.find((rule) => rule.ruleId === row.ruleId) : undefined;
+      const isIpProtocol = ipProtocolOptions.includes(type);
+      const isL7Protocol = l7GroupOptions.includes(type);
+      const resolvedTab = isL7Protocol ? 'L7' : (isIpProtocol ? 'IP协议' : activeTab);
+      const resolvedProtocolType = isL7Protocol ? getTransportByL7Group(type) : (type || 'TCP');
       return {
-        id: preId + idx + 1,
-        ruleId: row.ruleId || String(Math.floor(61000 + Math.random() * 5000)),
+        id: existingRule?.id ?? preId + idx + 1,
+        ruleId: existingRule?.ruleId ?? String(Math.floor(61000 + Math.random() * 5000)),
         name: row.name,
         protocol_type: resolvedProtocolType,
         port: importSelectedInterfaces.join('; '),
@@ -2237,31 +2275,26 @@ export default function RuleManagement() {
         protocol: protocol,
         tab: resolvedTab,
         description: row.description || `${row.name} 的导入规则`,
-        srcIp: row.srcIp || 'any',
-        srcPort: row.srcPort || 'any',
-        dstIp: row.dstIp || 'any',
-        dstPort: row.dstPort || 'any',
+        srcIp: normalizeImportedMultiValue(row.srcIp) || 'any',
+        srcPort: normalizeImportedMultiValue(row.srcPort) || 'any',
+        dstIp: normalizeImportedMultiValue(row.dstIp) || 'any',
+        dstPort: normalizeImportedMultiValue(row.dstPort) || 'any',
         storageLength: row.storageLength || DEFAULT_CAPTURE_LENGTH,
         timeout: resolvedProtocolType === 'UDP' ? '30' : '300',
-        l7Group: type === 'L7' ? (row.l7Group || 'HTTP') : undefined,
+        l7Group: isL7Protocol ? type : undefined,
       };
     });
 
-    if (importConflictStrategy === 'overwrite') {
-      // Overwrite: clear current protocol rules on this tab and insert
-      setAllRules(prev => {
-        const kept = prev.filter(r => r.protocol !== protocol || r.tab !== activeTab);
-        return [...kept, ...newRules];
-      });
-    } else {
-      // Merge: keep old and add new
-      setAllRules(prev => [...prev, ...newRules]);
-    }
+    setAllRules(prev => {
+      const updatedIds = new Set(importedRules.filter((rule) => rows.some((row) => row.ruleId === rule.ruleId)).map((rule) => rule.ruleId));
+      const kept = prev.filter((rule) => !updatedIds.has(rule.ruleId));
+      return [...kept, ...importedRules];
+    });
 
     setShowImportModal(false);
     setShowImportReportModal(false);
     setImportReport(null);
-    alert(`成功以${importMode === 'mixed' ? '混合模式' : '单一模式'}从 [${importedFile.name}] 导入 ${newRules.length} 条业务流控规则并分发到以下接口：\n${importSelectedInterfaces.join(', ')}`);
+    alert(`成功从 [${importedFile.name}] 导入 ${importedRules.length} 条业务流控规则。配置已即时生效，无需重启探针、无需推送探针。`);
   };
 
   const handleClearAllRules = () => {
@@ -2274,11 +2307,12 @@ export default function RuleManagement() {
   };
 
   // ---- Excel 导出 / 模版下载 ----
-  // 导出表头：与导入模版一致（中文描述，可选字段加括号说明）
+  // 系统导出包含应用ID，用于回导时定位并更新原应用；下载模板不包含应用ID
   const EXPORT_COLUMNS = [
-    { key: 'name', header: '应用名称' },
     { key: 'ruleId', header: '应用ID' },
-    { key: 'type', header: '类型(TCP/UDP/IP/L7)' },
+    { key: 'name', header: '应用名称' },
+    { key: 'mode', header: '模式' },
+    { key: 'type', header: '协议类型（TCP/UDP/IP具体类型/L7具体类型)' },
     { key: 'srcIp', header: '源IP' },
     { key: 'srcPort', header: '源端口' },
     { key: 'dstIp', header: '目的IP' },
@@ -2287,15 +2321,6 @@ export default function RuleManagement() {
     { key: 'srcPortExclude', header: '源端口排除 (选填）' },
     { key: 'dstIpExclude', header: '目的IP排除 (选填）' },
     { key: 'dstPortExclude', header: '目的端口排除 (选填）' },
-    { key: 'storageLength', header: '裁包长度' },
-    { key: 'description', header: '标识/备注' },
-  ];
-
-  const SINGLE_MODE_COLUMNS = [
-    { key: 'name', header: '应用名称' },
-    { key: 'ruleId', header: '应用ID' },
-    { key: 'type', header: '类型(TCP/UDP/IP/L7)' },
-    { key: 'flowRules', header: 'TCP流规则\n(格式: 源IP@源端口 -> 目的IP@目的端口)' },
     { key: 'storageLength', header: '裁包长度' },
     { key: 'description', header: '标识/备注' },
   ];
@@ -2311,36 +2336,29 @@ export default function RuleManagement() {
   const getExportCellValue = (item: any, key: string) => {
     switch (key) {
       case 'type': {
-        // 类型：TCP/UDP/IP/L7，与 UI 一致
-        if (item.tab === 'L7') return 'L7';
-        if (item.tab === 'IP协议') return 'IP';
+        if (item.tab === 'L7') return item.l7Group || '';
         return item.protocol_type || '';
       }
+      case 'mode':
+        return item.mode || '混合模式';
       case 'storageLength':
         return getCaptureLengthDisplay(item);
       case 'srcIpExclude':
-        return parseExcludeFromGroup(item.srcIp);
+        return formatCsvMultiValue(parseExcludeFromGroup(item.srcIp));
       case 'srcPortExclude':
-        return parseExcludeFromGroup(item.srcPort);
+        return formatCsvMultiValue(parseExcludeFromGroup(item.srcPort));
       case 'dstIpExclude':
-        return parseExcludeFromGroup(item.dstIp);
+        return formatCsvMultiValue(parseExcludeFromGroup(item.dstIp));
       case 'dstPortExclude':
-        return parseExcludeFromGroup(item.dstPort);
-      case 'flowRules': {
-        const srcIp = (item.srcIp || 'any').split(' | ')[0];
-        const srcPort = (item.srcPort || 'any').split(' | ')[0];
-        const dstIp = (item.dstIp || 'any').split(' | ')[0];
-        const dstPort = (item.dstPort || 'any').split(' | ')[0];
-        return `${srcIp}@${srcPort} -> ${dstIp}@${dstPort}`;
-      }
+        return formatCsvMultiValue(parseExcludeFromGroup(item.dstPort));
       case 'srcIp':
-        return (item.srcIp || 'any').split(' | ')[0];
+        return formatCsvMultiValue((item.srcIp || 'any').split(' | ')[0]);
       case 'srcPort':
-        return (item.srcPort || 'any').split(' | ')[0];
+        return formatCsvMultiValue((item.srcPort || 'any').split(' | ')[0]);
       case 'dstIp':
-        return (item.dstIp || 'any').split(' | ')[0];
+        return formatCsvMultiValue((item.dstIp || 'any').split(' | ')[0]);
       case 'dstPort':
-        return (item.dstPort || 'any').split(' | ')[0];
+        return formatCsvMultiValue((item.dstPort || 'any').split(' | ')[0]);
       case 'name':
         return item.name || '';
       case 'ruleId':
@@ -2350,14 +2368,6 @@ export default function RuleManagement() {
       default:
         return item[key] !== undefined ? String(item[key]) : '';
     }
-  };
-
-  const buildExcelHtml = (rows: any[], columns: typeof EXPORT_COLUMNS) => {
-    const thead = `<tr>${columns.map((c) => `<th style="background:#f0f0f0;border:1px solid #ccc;padding:4px 8px;text-align:center;">${c.header}</th>`).join('')}</tr>`;
-    const tbody = rows.map((row) =>
-      `<tr>${columns.map((c) => `<td style="border:1px solid #ccc;padding:4px 8px;">${String(getExportCellValue(row, c.key) ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`).join('')}</tr>`
-    ).join('');
-    return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table>${thead}${tbody}</table></body></html>`;
   };
 
   const buildCsv = (rows: any[], columns: typeof EXPORT_COLUMNS) => {
@@ -2381,75 +2391,45 @@ export default function RuleManagement() {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportExcel = () => {
-    const rows = filteredTableData;
-    if (rows.length === 0) {
-      alert('当前筛选结果为空，无可导出的应用。');
-      return;
-    }
-    // 打开导出弹窗，让用户重命名文件
-    const defaultName = `混合模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`;
-    setExportFileName(defaultName);
-    setExportMode('mixed');
-    setExportFormat('excel');
-    setShowExportModal(true);
+  const formatExportTimestamp = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
   };
 
-  const handleConfirmExport = () => {
-    const rows = filteredTableData;
+  const sanitizeFilenamePart = (value: string) => value.trim().replace(/[\\/:*?"<>|]/g, '_');
+
+  const getExportProbeAndInterface = (value: string) => {
+    const separator = value.includes(':') ? ':' : '/';
+    const [probeName, ...interfaceParts] = value.split(separator);
+    return {
+      probeName: sanitizeFilenamePart(probeName || value),
+      interfaceName: sanitizeFilenamePart(interfaceParts.join(separator) || value),
+    };
+  };
+
+  const handleExportExcel = () => {
+    if (!selectedInterface) {
+      alert('请先选择一个具体接口后再导出。');
+      return;
+    }
+    const exportTabs = new Set(['自定义TCP', '自定义UDP', 'L7']);
+    const rows = allRules.filter((rule) =>
+      exportTabs.has(rule.tab) &&
+      ruleBoundToProbe(rule.port || '', selectedInterface)
+    );
     if (rows.length === 0) {
-      alert('当前筛选结果为空，无可导出的应用。');
+      alert('当前接口没有可导出的自定义TCP、自定义UDP或L7规则。');
       return;
     }
-    const name = (exportFileName || '').trim();
-    if (!name) {
-      alert('请输入导出文件名。');
-      return;
-    }
-    const safeName = name.replace(/[\/:*?"<>|]/g, '_').replace(/\.(xls|csv)$/i, '');
-    const columns = exportMode === 'mixed' ? EXPORT_COLUMNS : SINGLE_MODE_COLUMNS;
-    const isExcel = exportFormat === 'excel';
-    const filename = `${safeName}.${isExcel ? 'xls' : 'csv'}`;
-    const content = isExcel ? buildExcelHtml(rows, columns) : buildCsv(rows, columns);
-    const mime = isExcel ? 'application/vnd.ms-excel' : 'text/csv;charset=utf-8';
-    downloadBlob(content, filename, mime);
-    setShowExportModal(false);
-    alert(`已以${exportMode === 'mixed' ? '混合模式' : '单一模式'}导出 ${rows.length} 条应用到 ${isExcel ? 'Excel' : 'CSV'} 文件：${filename}`);
+    const { probeName, interfaceName } = getExportProbeAndInterface(selectedInterface);
+    const filename = `${probeName}_${interfaceName}_${formatExportTimestamp(new Date())}.csv`;
+    downloadBlob(buildCsv(rows, EXPORT_COLUMNS), filename, 'text/csv;charset=utf-8');
   };
 
   const handleDownloadTemplate = () => {
-    const isMixedMode = templateMode === 'mixed';
-    const sample = isMixedMode
-      ? {
-          name: '示例应用',
-          ruleId: '10001',
-          type: 'TCP',
-          srcIp: '192.168.1.0/24',
-          srcPort: 'any',
-          dstIp: '10.0.0.5',
-          dstPort: '80, 443',
-          srcIpExclude: '',
-          srcPortExclude: '',
-          dstIpExclude: '',
-          dstPortExclude: '',
-          storageLength: '128字节',
-          description: '示例应用描述',
-        }
-      : {
-          name: 'Web门户应用',
-          ruleId: '10001',
-          type: 'TCP',
-          flowRules: '1.1.1.1@1234 -> 2.2.2.2@2345; 11:22:33::1@1234 -> 22:33:44::1@3456',
-          storageLength: '128字节',
-          description: '多组四元组配置示例',
-        };
-    const columns = isMixedMode ? EXPORT_COLUMNS : SINGLE_MODE_COLUMNS;
-    const html = buildExcelHtml([sample], columns);
-    const modeName = isMixedMode ? '混合模式应用' : '单一模式应用';
-    const filename = `${modeName}_导入模版_${new Date().toISOString().slice(0, 10)}.xls`;
-    downloadBlob(html, filename, 'application/vnd.ms-excel');
-    setShowTemplateModal(false);
-    alert(`已下载${modeName}导入模版：${filename}`);
+    const filename = `应用配置导入模版_${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadBlob(`\uFEFF${templateCsv.replace(/^\uFEFF/, '')}`, filename, 'text/csv;charset=utf-8');
+    alert(`已下载统一导入模版：${filename}`);
   };
 
   const handleOpenL7GroupSettings = (group: string) => {
@@ -2593,7 +2573,7 @@ export default function RuleManagement() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setImportedFile(null); setImportMode('mixed'); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+              onClick={() => { setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
               className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-sky-500" />
@@ -2607,11 +2587,23 @@ export default function RuleManagement() {
               <span>导出</span>
             </button>
             <button
-              onClick={() => { setTemplateMode('mixed'); setShowTemplateModal(true); }}
+              onClick={handleDownloadTemplate}
               className="px-3 py-1.5 bg-white hover:bg-sky-50 text-slate-600 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <FileDown className="w-3.5 h-3.5 text-sky-500" />
               <span>模版下载</span>
+            </button>
+            <button
+              onClick={handleOpenBatchAdvancedConfig}
+              disabled={isKnownApp}
+              className={`px-3 py-1.5 border border-slate-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all ${
+                isKnownApp
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-white hover:bg-sky-50 text-slate-600 cursor-pointer'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5 text-sky-500" />
+              <span>批量配置</span>
             </button>
             <button
               onClick={() => setShowClearAllConfirm(true)}
@@ -2707,24 +2699,24 @@ export default function RuleManagement() {
                         className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Wrench className="w-3.5 h-3.5 text-slate-400" />
-                        批量高级配置
+                        批量配置
                       </button>
                       <button
-                        onClick={() => { setShowBatchMenu(false); setImportedFile(null); setImportMode('mixed'); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
+                        onClick={() => { setShowBatchMenu(false); setImportedFile(null); setImportConflictStrategy('merge'); setImportSelectedInterfaces(['Probe / Lab']); setShowImportModal(true); }}
                         className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                       >
                         <Upload className="w-3.5 h-3.5 text-slate-400" />
                         导入配置
                       </button>
                       <button
-                        onClick={() => { setShowBatchMenu(false); alert('已生成当前应用配置的导出文件并开始下载！'); }}
+                        onClick={() => { setShowBatchMenu(false); handleExportExcel(); }}
                         className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                       >
                         <Download className="w-3.5 h-3.5 text-slate-400" />
                         导出配置
                       </button>
                       <button
-                        onClick={() => { setShowBatchMenu(false); alert('已成功下载标准应用模版 (CSV/JSON 格式)。'); }}
+                        onClick={() => { setShowBatchMenu(false); handleDownloadTemplate(); }}
                         className="w-full px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                       >
                         <FileDown className="w-3.5 h-3.5 text-slate-400" />
@@ -3327,7 +3319,7 @@ export default function RuleManagement() {
                   <div className="space-y-7 max-w-5xl py-2 max-h-[58vh] overflow-y-auto pr-2 no-scrollbar">
                     {isBatchAdvancedMode && (
                       <div className="bg-sky-50/50 border border-sky-100 rounded-lg p-4 space-y-1">
-                        <div className="text-xs font-medium text-slate-700">批量高级配置</div>
+                        <div className="text-xs font-medium text-slate-700">批量配置</div>
                         <div className="text-[11px] text-slate-500">将当前高级参数批量应用到已勾选的 {batchAdvancedRuleIds.length} 条应用，并覆盖其各接口高级配置。</div>
                       </div>
                     )}
@@ -4523,7 +4515,7 @@ export default function RuleManagement() {
               className="relative bg-white border border-slate-200 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col z-10 animate-none"
             >
               <div className="px-6 py-4 border-b border-slate-150 flex items-center justify-between bg-white select-none">
-                <h3 className="text-sm font-semibold text-slate-800">上传文件</h3>
+                <h3 className="text-sm font-semibold text-slate-800">导入应用</h3>
                 <button 
                   onClick={() => setShowImportModal(false)}
                   className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
@@ -4597,44 +4589,6 @@ export default function RuleManagement() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-[90px_1fr] items-center gap-2">
-                  <label className="font-semibold text-xs text-slate-500">模式</label>
-                  <div className="flex items-center gap-6">
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={importMode === 'mixed'}
-                        onChange={() => { setImportMode('mixed'); setImportReport(null); }}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">混合模式</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        checked={importMode === 'single'}
-                        onChange={() => { setImportMode('single'); setImportReport(null); }}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-750 text-xs font-semibold group-hover:text-slate-900">单一模式</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                  </div>
-                </div>
-
                 {/* 同名规则导入 field */}
                 <div className="grid grid-cols-[90px_1fr] items-center gap-2">
                   <label className="text-slate-550 font-medium font-semibold text-xs text-slate-500">同名规则导入</label>
@@ -4678,7 +4632,7 @@ export default function RuleManagement() {
                   <input 
                     id="config-file-upload" 
                     type="file" 
-                    accept=".csv,.xlsx,.xls"
+                    accept=".csv"
                     className="hidden" 
                     onChange={fileSelectImport}
                   />
@@ -4692,7 +4646,7 @@ export default function RuleManagement() {
                         将文件拖到此处，或 <span className="text-sky-500 hover:underline cursor-pointer">点击上传</span>
                       </div>
                       <p className="text-[10px] text-slate-400 leading-normal max-w-sm">
-                        上传文件导入规则，支持 Excel 和 CSV 格式
+                        仅支持 CSV 格式，文件列需与统一导入模版一致
                       </p>
                     </div>
                   ) : (
@@ -4788,40 +4742,17 @@ export default function RuleManagement() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-6">
-                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#f8fafc] text-slate-500 border-b border-slate-200">
-                      <tr>
-                        <th className="px-4 py-2.5 font-semibold text-slate-600">应用名称</th>
-                        <th className="px-4 py-2.5 font-semibold text-slate-600 w-[100px] text-center">结果</th>
-                        <th className="px-4 py-2.5 font-semibold text-slate-600">详情</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {importReport.failed === 0 ? (
-                        <tr>
-                          <td colSpan={3} className="px-4 py-8 text-center text-slate-400">
-                            无失败详情
-                          </td>
-                        </tr>
-                      ) : (
-                        importReport.rows
-                          .filter((row) => row.result === '失败')
-                          .map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/60">
-                              <td className="px-4 py-2.5 text-slate-700">{row.name}</td>
-                              <td className="px-4 py-2.5 text-center">
-                                <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-red-50 text-red-600">
-                                  {row.result}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2.5 text-slate-500">{row.detail || '—'}</td>
-                            </tr>
-                          ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">分析详情</label>
+                <textarea
+                  readOnly
+                  value={importReport.failed === 0
+                    ? '全部条目预分析通过，可以导入。'
+                    : importReport.rows
+                        .filter((row) => row.result === '失败')
+                        .map((row, index) => `${index + 1}. ${row.name}：${row.detail}`)
+                        .join('\n')}
+                  className="w-full min-h-56 resize-none rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-700 outline-none"
+                />
               </div>
 
               <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
@@ -4839,217 +4770,6 @@ export default function RuleManagement() {
                     确认导入
                   </button>
                 )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* 导入模版下载 Modal */}
-      <AnimatePresence>
-        {showTemplateModal && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowTemplateModal(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
-            >
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
-                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                  <FileDown className="w-4 h-4 text-sky-500" />
-                  下载导入模版
-                </h3>
-                <button
-                  onClick={() => setShowTemplateModal(false)}
-                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="px-6 py-5 space-y-4 bg-white text-xs">
-                <div className="grid grid-cols-[80px_1fr] items-start gap-2">
-                  <label className="text-slate-500 font-medium pt-0.5">模版类型</label>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group w-fit">
-                      <input
-                        type="radio"
-                        name="templateMode"
-                        checked={templateMode === 'mixed'}
-                        onChange={() => setTemplateMode('mixed')}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">混合模式应用</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group w-fit">
-                      <input
-                        type="radio"
-                        name="templateMode"
-                        checked={templateMode === 'single'}
-                        onChange={() => setTemplateMode('single')}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">单一模式应用</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-                <button
-                  onClick={() => setShowTemplateModal(false)}
-                  className="px-6 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleDownloadTemplate}
-                  className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
-                >
-                  下载模版
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* 导出 Excel Modal */}
-      <AnimatePresence>
-        {showExportModal && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowExportModal(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
-            >
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
-                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                  <Download className="w-4 h-4 text-sky-500" />
-                  导出应用
-                </h3>
-                <button
-                  onClick={() => setShowExportModal(false)}
-                  className="p-1 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="px-6 py-5 space-y-4 bg-white text-xs">
-                <div className="grid grid-cols-[80px_1fr] items-center gap-2">
-                  <label className="text-slate-500 font-medium">应用模式</label>
-                  <div className="flex items-center gap-6">
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
-                      <input
-                        type="radio"
-                        name="exportMode"
-                        checked={exportMode === 'mixed'}
-                        onChange={() => {
-                          setExportMode('mixed');
-                          setExportFileName(`混合模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`);
-                        }}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">混合模式</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('老版规则配置模式，支持一组四元组配置，支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none group">
-                      <input
-                        type="radio"
-                        name="exportMode"
-                        checked={exportMode === 'single'}
-                        onChange={() => {
-                          setExportMode('single');
-                          setExportFileName(`单一模式应用_${protocol}_${activeTab}_${new Date().toISOString().slice(0, 10)}`);
-                        }}
-                        className="text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                      />
-                      <span className="text-slate-700 text-xs font-semibold group-hover:text-slate-900">单一模式</span>
-                      <Info
-                        onClick={(e) => e.preventDefault()}
-                        onMouseEnter={(e) => showTooltip('支持多组四元组配置，精准匹配多个会话，不支持地址或端口排除。', e)}
-                        onMouseLeave={hideTooltip}
-                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-500 cursor-help shrink-0"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div className="grid grid-cols-[80px_1fr] items-center gap-2">
-                  <label className="text-slate-500 font-medium">文件名</label>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="flex min-w-0 flex-1 items-center border border-slate-200 rounded-lg px-3 py-2 bg-white focus-within:border-sky-400 transition-all">
-                      <input
-                        type="text"
-                        value={exportFileName}
-                        onChange={(e) => setExportFileName(e.target.value)}
-                        className="min-w-0 flex-1 outline-none text-slate-700 text-[13px]"
-                        placeholder="请输入文件名"
-                        autoFocus
-                      />
-                      <span className="text-slate-400 pl-2 ml-2 border-l border-slate-100 whitespace-nowrap">
-                        .{exportFormat === 'excel' ? 'xls' : 'csv'}
-                      </span>
-                    </div>
-                    <select
-                      value={exportFormat}
-                      onChange={(event) => setExportFormat(event.target.value as 'excel' | 'csv')}
-                      aria-label="导出格式"
-                      className="h-[34px] shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 cursor-pointer"
-                    >
-                      <option value="excel">Excel</option>
-                      <option value="csv">CSV</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-                <button
-                  onClick={() => setShowExportModal(false)}
-                  className="px-6 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleConfirmExport}
-                  className="px-6 py-2 text-xs bg-sky-500 hover:bg-sky-600 text-white rounded-lg transition-colors cursor-pointer"
-                >
-                  确认导出
-                </button>
               </div>
             </motion.div>
           </div>
